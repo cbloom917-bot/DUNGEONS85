@@ -255,8 +255,9 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 </div>
 
 <script>
-    const GOOGLE_CLIENT_ID = "614025216557-rumtlu22kcsm5aka053t7p5p84826qt4.apps.googleusercontent.com";
-    const GOOGLE_API_KEY = "AIzaSyD504HDTxz2X9I_4syVoE1ogGhlNBcL928";
+    // Fallback logic: check if config.js defined them globally first, otherwise use hardcoded strings
+    const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || "614025216557-rumtlu22kcsm5aka053t7p5p84826qt4.apps.googleusercontent.com";
+    const GOOGLE_API_KEY = window.GOOGLE_API_KEY || "AIzaSyD504HDTxz2X9I_4syVoE1ogGhlNBcL928";
     const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
     let pickerApiLoaded = false;
