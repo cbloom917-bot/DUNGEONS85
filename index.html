@@ -97,7 +97,7 @@ canvas { touch-action: none; -webkit-user-select: none; user-select: none; }
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title">VERSION 7.1.4</div>
+            <div class="login-title">VERSION 7.1.5</div>
             <div class="toggle-container">
                 <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
                 <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
@@ -240,7 +240,7 @@ canvas { touch-action: none; -webkit-user-select: none; user-select: none; }
         if (!pickerApiLoaded || !oauthToken) return;
         const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
         view.setIncludeFolders(true); view.setMimeTypes("image/png,image/jpeg,image/webp,image/svg+xml");
-        new google.picker.PickerBuilder().addView(view).setOAuthToken(oauthToken).setCallback(handlePickerSelection).setTitle(currentPickerMode === 'MAP' ? "Select Map" : "Select Token").build().setVisible(true);
+        new google.picker.PickerBuilder().addView(view).setOAuthToken(oauthToken).setAppId("614025216557").setDeveloperKey("AIzaSyD504HDTxz2X9I_4syVoE1ogGhlNBcL928").setCallback(handlePickerSelection).setTitle(currentPickerMode === 'MAP' ? "Select Map" : "Select Token").build().setVisible(true);
     }
     function handlePickerSelection(data) {
         if (data[google.picker.Response.ACTION] === google.picker.Action.PICKED) {
