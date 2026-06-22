@@ -18,7 +18,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 #top-nav { position: fixed; top: 0; left: 0; width: 100%; height: 60px; display: flex; align-items: center; justify-content: center; gap: 4rem; background-color: #000; z-index: 1000; }
 .nav-link { color: #666; text-decoration: none; text-transform: uppercase; font-weight: bold; font-size: 1.1rem; letter-spacing: 0.1em; padding: 4px 10px; transition: color 0.2s ease; }
 .nav-link:hover, .nav-link.active { background-color: transparent; color: #fff; }
-#login-screen { position: fixed; top: 60px; bottom: 0; left: 0; right: 0; background-color: #000; background-image: url('assets/background.png'); background-repeat: no-repeat; background-position: top center; background-size: 100% 80vh; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; border: none; margin: 0; }
+#login-screen { position: fixed; top: 100px; bottom: 0; left: 0; right: 0; background-color: #000; background-image: url('assets/background.png'); background-repeat: no-repeat; background-position: top center; background-size: 100% auto; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; border: none; margin: 0; }
 .login-wrap { text-align: center; max-width: 400px; width: 100%; margin: 0 auto; border: none; }
 .login-title { font-size: 1.75rem; font-weight: bold; border: none; padding-bottom: 0.5rem; margin-bottom: 1.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
 .bw-input { width: 100%; background-color: #000; border: 2px solid #fff; color: #fff; padding: 0.75rem; text-align: center; font-size: 1rem; outline: none; text-transform: uppercase; margin-bottom: 1rem; }
@@ -97,7 +97,7 @@ canvas { touch-action: none; -webkit-user-select: none; user-select: none; }
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title">VERSION 7.2.0</div>
+            <div class="login-title">VERSION 7.2.1</div>
             <div class="toggle-container">
                 <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
                 <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
