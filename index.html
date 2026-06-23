@@ -362,9 +362,6 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
         window.addEventListener('beforeunload', () => { if (socket) { socket.emit('disconnect'); socket.disconnect(); } });
     });
 
- 
-    }
-
     function resizeCanvas() {
         canvas.width = canvas.clientWidth; 
         canvas.height = canvas.clientHeight; 
