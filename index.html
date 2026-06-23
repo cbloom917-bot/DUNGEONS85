@@ -151,7 +151,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title">VERSION 7.1.1</div>
+            <div class="login-title"> TEST VERSION PHASE 1.1</div>
             <div class="toggle-container">
                 <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
                 <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
@@ -201,7 +201,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
         <button onclick="toggleTorchPanel()" class="tool-btn">Torch Timer</button>
         <button onclick="toggleTurnTracker()" class="tool-btn">Turn Tracker</button>
         <button onclick="toggleFogPanel()" class="tool-btn">Fog of War</button>
-        <button onclick="forcePlayerFocus()" class="tool-btn>Focus View</button>
+        <button onclick="forcePlayerFocus()" class="tool-btn">Focus View</button>
 
 
         <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
@@ -301,7 +301,6 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     }
     function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
 
-    // Replaces openCloudVault/Google Picker
     function selectLocalFile(mode) {
         if (!tableState.isDM) return;
         const input = document.createElement('input');
@@ -338,8 +337,6 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
         const num = Math.floor(100 + Math.random() * 900); 
         const roomName = `${adj}${noun}${num}`.toUpperCase();
         document.getElementById('room-id-input').value = roomName;
-    }
-
             }
     }
 
