@@ -11,7 +11,7 @@
 <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
 <style>
     * { box-sizing: border-box; font-family: monospace; }
-    body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; width: 100vw; -webkit-user-select: none; user-select: none; }
+    body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; height: 100vh; width: 100vw; -webkit-user-select: none; user-select: none; }
 
     .flex { display: flex; }
     .flex-col { flex-direction: column; }
@@ -49,6 +49,8 @@
     canvas { touch-action: none; -webkit-user-select: none; user-select: none; }
     #vtt-canvas { flex: 1; min-height: 0; position: relative; width: 100%; background-color: #000; cursor: grab; display: block; }
     #vtt-canvas.plotting { cursor: crosshair !important; }
+    
+    .dice-history-ticker, .video-ribbon { flex-shrink: 0; }
     
     .toolbar { position: absolute; background: #000; border: 2px solid #fff; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; z-index: 10; }
     #toolbar-left { top: 4rem; left: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 110px; }
@@ -231,6 +233,7 @@
 
 <script>
     let pickerApiLoaded = false;
+    let oauthToken = null;
     let currentPickerMode = null; 
 
     const adjectives = ["Gravel", "Iron", "Obsidian", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Corpse", "Broken"];
@@ -257,22 +260,23 @@
             scope: "https://www.googleapis.com/auth/drive.file",
             callback: (tokenResponse) => { 
                 if (tokenResponse && tokenResponse.access_token) { 
-                    createPickerInstance(tokenResponse.access_token); 
+                    oauthToken = tokenResponse.access_token; 
+                    createPickerInstance(); 
                 } 
             },
         });
         tokenClient.requestAccessToken();
     }
     
-    function createPickerInstance(token) {
-        if (!pickerApiLoaded) return;
+    function createPickerInstance() {
+        if (!pickerApiLoaded || !oauthToken) return;
         const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
         view.setIncludeFolders(true); 
         view.setMimeTypes("image/png,image/jpeg,image/webp,image/svg+xml");
         
         new google.picker.PickerBuilder()
             .addView(view)
-            .setOAuthToken(token)
+            .setOAuthToken(oauthToken)
             .setAppId("614025216557")
             .setDeveloperKey("AIzaSyD504HDTxz2X9I_4syVoE1ogGhlNBcL928")
             .setCallback(handlePickerSelection)
@@ -284,8 +288,8 @@
     function handlePickerSelection(data) {
         if (data[google.picker.Response.ACTION] === google.picker.Action.PICKED) {
             const doc = data[google.picker.Response.DOCUMENTS][0];
-            const fileId = doc[google.picker.Document.ID];
-            const publicDirectUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+            // FIXED: Using public direct download URL instead of API request to prevent 401s
+            const publicDirectUrl = `https://drive.google.com/uc?export=view&id=${doc[google.picker.Document.ID]}`;
             
             if (currentPickerMode === 'MAP') {
                 tableState.mapSrc = publicDirectUrl; 
@@ -341,6 +345,7 @@
         window.addEventListener('beforeunload', () => { if (socket) { socket.emit('disconnect'); socket.disconnect(); } }); 
     });
     
+    // FIXED: Simplified loader for public URLs
     async function loadCloudImage(src) {
         if (!src) return Promise.resolve(null);
         if (tokenImageCache[src]) return Promise.resolve(tokenImageCache[src]);
@@ -353,7 +358,10 @@
                 tokenImageCache[src] = img; 
                 resolve(img); 
             };
-            img.onerror = () => { resolve(null); };
+            img.onerror = (e) => { 
+                console.error("Load failed:", e);
+                resolve(null); 
+            };
         });
     }
     
@@ -385,6 +393,7 @@
     function forcePlayerFocus() { 
         if (!tableState.isDM || !socket) return; 
         socket.emit('forceCamera', tableState.camera); 
+        addResultToHistoryTicker("[SYS]", 0, "GM FORCED CAMERA FOCUS"); 
     }
     
     function toggleLocalAudio() { 
@@ -423,7 +432,21 @@
                 document.getElementById('login-screen').classList.add('hidden'); 
                 document.getElementById('vtt-interface').classList.remove('hidden');
                 
-                setTimeout(() => { resizeCanvas(); makeElementsDraggable(); }, 50);
+                const emptyMsg = document.getElementById('ticker-empty-msg'); 
+                if (emptyMsg) emptyMsg.remove();
+                
+                setTimeout(() => socket.emit('playerNotification', `${tableState.playerName} JOINED`), 500);
+                
+                if (!tableState.isDM) { 
+                    const dmToolbar = document.getElementById('toolbar-right'); 
+                    if (dmToolbar) dmToolbar.remove(); 
+                }
+                
+                setTimeout(() => { 
+                    resizeCanvas(); 
+                    makeElementsDraggable(); 
+                }, 50);
+                
                 socket.emit('joinRoom', { roomName, playerName, isDM: tableState.isDM, peerId });
             });
             
@@ -444,8 +467,14 @@
             });
             
             socket.on('diceRolledAnimation', (data) => { executeDiceOverlayAnimation(data.sides, data.result, data.player, data.screenX, data.screenY); });
+            socket.on('playerNotification', (msg) => { addResultToHistoryTicker("[SYS]", 0, msg); });
             socket.on('syncCamera', (cameraData) => { if (tableState.isDM) return; tableState.camera = cameraData; draw(); });
             socket.on('syncFoW', (fowData) => { tableState.fowEnabled = fowData.enabled; tableState.fowPolygons = fowData.polygons; tableState.isDarknessActive = fowData.darkness; draw(); });
+        });
+        
+        peer.on('call', (call) => { 
+            call.answer(localStream); 
+            call.on('stream', (remoteStream) => { addVideoFeed(remoteStream, call.peer, "Player"); }); 
         });
     }
     
@@ -484,19 +513,13 @@
     
     function exportTableState() {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tableState));
-        const downloadAnchor = document.createElement('a'); 
-        downloadAnchor.setAttribute("href", dataStr); 
-        downloadAnchor.setAttribute("download", "vtt-table-state.json"); 
-        document.body.appendChild(downloadAnchor); 
-        downloadAnchor.click(); 
-        downloadAnchor.remove();
+        const a = document.createElement('a'); a.href = dataStr; a.download = "vtt-table-state.json"; a.click();
     }
     
     let isDraggingWorkspace = false, dragStart = { x: 0, y: 0 }, selectedToken = null;
     
     canvas.addEventListener('contextmenu', (e) => {
-        if (!tableState.isDM) return; 
-        e.preventDefault();
+        if (!tableState.isDM) return; e.preventDefault();
         const rect = canvas.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
@@ -505,15 +528,13 @@
     });
     
     canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 2) return; 
-        ctxMenu.style.display = 'none'; 
+        if (e.button === 2) return; ctxMenu.style.display = 'none'; 
         const rect = canvas.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
         if (tableState.isDM && isDrawingFoW) { currentFoWPolygon.push({x: worldX, y: worldY}); draw(); return; }
         selectedToken = tableState.tokens.slice().reverse().find(t => Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2);
-        isDraggingWorkspace = !selectedToken; 
-        dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        isDraggingWorkspace = !selectedToken; dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     });
     
     canvas.addEventListener('mousemove', (e) => {
@@ -530,19 +551,16 @@
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); tableState.camera.zoom *= (e.deltaY < 0 ? 1.1 : 1 / 1.1); draw(); });
     
     function draw() {
-        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); 
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.save(); ctx.translate(tableState.camera.x, tableState.camera.y); ctx.scale(tableState.camera.zoom, tableState.camera.zoom);
-        let mapImg = tokenImageCache[tableState.mapSrc];
-        if (mapImg && mapImg.complete) ctx.drawImage(mapImg, -mapImg.width / 2, -mapImg.height / 2);
-        for (let t of tableState.tokens) { 
-            let img = tokenImageCache[t.src]; 
-            if (img && img.complete) ctx.drawImage(img, t.x - t.size / 2, t.y - t.size / 2, t.size, t.size); 
-        }
-        ctx.restore(); 
+        const map = tokenImageCache[tableState.mapSrc];
+        if (map && map.complete) ctx.drawImage(map, -map.width/2, -map.height/2);
+        tableState.tokens.forEach(t => { const i = tokenImageCache[t.src]; if (i) ctx.drawImage(i, t.x-t.size/2, t.y-t.size/2, t.size, t.size); });
+        ctx.restore();
     }
     
     function rollDice(sides) { socket.emit('executeDiceRoll', { sides, result: Math.floor(Math.random() * sides) + 1, player: tableState.playerName }); }
-    function executeDiceOverlayAnimation(sides, result, rollerName) { addResultToHistoryTicker(rollerName, sides, result); }
+    function executeDiceOverlayAnimation(sides, result, rollerName, posX, posY) { addResultToHistoryTicker(rollerName, sides, result); }
     function addResultToHistoryTicker(player, sides, result) { 
         const ticker = document.getElementById('ticker-log'); 
         const entry = document.createElement('div'); entry.className = 'ticker-entry'; 
@@ -560,6 +578,12 @@
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             document.getElementById('local-video').srcObject = localStream; 
         } catch (err) { console.error("Hardware Access Failed"); }
+    }
+    
+    function addVideoFeed(stream, peerId, characterName) {
+        const box = document.createElement('div'); box.className = "video-box"; box.id = `video-${peerId}`;
+        const vid = document.createElement('video'); vid.srcObject = stream; vid.autoplay = true; vid.playsInline = true;
+        box.appendChild(vid); document.getElementById('peer-videos-container').appendChild(box);
     }
     
     function makeElementsDraggable() {
