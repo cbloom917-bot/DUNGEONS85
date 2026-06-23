@@ -57,7 +57,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     justify-content: center;
     height: calc(100vh - 60px);
     width: 100%;
-    margin-top: 60px; } 
+    margin-top: 0; } 
     .login-wrap { text-align: center; max-width: 400px; width: 100%; margin: 0 auto; border: none; }
     .login-title { font-size: 1.75rem; font-weight: bold; border: none; padding-bottom: 0.5rem; margin-bottom: 1.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
     .bw-input { width: 100%; background-color: #000; border: 2px solid #fff; color: #fff; padding: 0.75rem; text-align: center; font-size: 1rem; outline: none; text-transform: uppercase; margin-bottom: 1rem; }
@@ -168,7 +168,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title">THE ANTI-VTT VTT VERSION 8.0</div>
+            <div class="login-title"> Version 8.1</div>
             <div class="toggle-container">
                 <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
                 <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
@@ -623,40 +623,40 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
     function updateFogUI() {
-        const btnToggle = document.getElementById('btn-fog-toggle');
-        const btnDraw = document.getElementById('btn-fog-draw');
-        const btnReset = document.getElementById('btn-fog-reset');
-        const btnDark = document.getElementById('btn-darkness-toggle');
+    const btnToggle = document.getElementById('btn-fog-toggle');
+    const btnDraw = document.getElementById('btn-fog-draw');
+    const btnReset = document.getElementById('btn-fog-reset');
 
+    if (!btnToggle) return;
 
-        if (!btnToggle) return;
-
-
-        if (isDrawingFoW) {
-            btnDraw.innerText = "[ PLOTTING ]";
-            btnDraw.style.background = "#ff3333";
-            btnDraw.style.color = "#fff";
-            btnDraw.style.borderColor = "#ff3333";
-            document.getElementById('vtt-canvas').classList.add('plotting');
-        } else {
-            btnDraw.innerText = "PLOT REVEAL";
-            btnDraw.style.background = "#000";
-            btnDraw.style.color = "#fff";
-            btnDraw.style.borderColor = "#fff";
-            document.getElementById('vtt-canvas').classList.remove('plotting');
-        }
-
-
-        if (tableState.isDarknessActive) {
-            btnDark.innerText = "LIFT DARKNESS";
-            btnDark.style.background = "#fff";
-            btnDark.style.color = "#000";
-        } else {
-            btnDark.innerText = "FORCE DARKNESS";
-            btnDark.style.background = "#000";
-            btnDark.style.color = "#fff";
-        }
+    if (tableState.fowEnabled) {
+        btnToggle.innerText = "Disable Fog";
+        btnToggle.style.background = "#fff";
+        btnToggle.style.color = "#000";
+        btnDraw.style.display = "block";
+        btnReset.style.display = "block";
+    } else {
+        btnToggle.innerText = "Enable Fog";
+        btnToggle.style.background = "#000";
+        btnToggle.style.color = "#fff";
+        btnDraw.style.display = "none";
+        btnReset.style.display = "none";
     }
+
+    if (isDrawingFoW) {
+        btnDraw.innerText = "[ PLOTTING ]";
+        btnDraw.style.background = "#ff3333";
+        btnDraw.style.color = "#fff";
+        btnDraw.style.borderColor = "#ff3333";
+        document.getElementById('vtt-canvas').classList.add('plotting');
+    } else {
+        btnDraw.innerText = "PLOT REVEAL";
+        btnDraw.style.background = "#000";
+        btnDraw.style.color = "#fff";
+        btnDraw.style.borderColor = "#fff";
+        document.getElementById('vtt-canvas').classList.remove('plotting');
+    }
+}
 
 
     function broadcastTokensMatrixChange() {
