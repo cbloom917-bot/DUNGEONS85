@@ -29,24 +29,35 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     .nav-link:hover, .nav-link.active { background-color: transparent; color: #fff; }
 
 
-    #login-screen { 
-        position: fixed; top: 60px; bottom: 0; left: 0; right: 0; 
-        background-color: #000; 
-        background-image: url('assets/background.png');
-        background-repeat: no-repeat;
-        background-position: top center;
-        background-size: 100% auto;
-        z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; border: none; margin: 0; 
-    }
+    login-screen { 
+    position: fixed; 
+    top: 60px; 
+    bottom: 0; 
+    left: 0; 
+    right: 0; 
+    background-color: #000; 
+    background-image: url('assets/background.png');
+    background-repeat: no-repeat;
+    background-position: center center; 
+    background-size: cover; 
+    z-index: 50; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    padding: 1rem; 
+    border: none; 
+    margin: 0; 
+}
 
 .login-wrapper {
     display: flex;
     flex-direction: column;
-    align-items: center;      /* Centers horizontally */
-    justify-content: center;  /* Centers vertically */
-    height: calc(100vh - 60px); /* 100% of viewport minus your 60px top bar */
+    align-items: center;     
+    justify-content: center;
+    height: calc(100vh - 60px);
     width: 100%;
-    margin-top: 60px; }        /* Pushes it below the header */
+    margin-top: 60px; } 
     .login-wrap { text-align: center; max-width: 400px; width: 100%; margin: 0 auto; border: none; }
     .login-title { font-size: 1.75rem; font-weight: bold; border: none; padding-bottom: 0.5rem; margin-bottom: 1.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
     .bw-input { width: 100%; background-color: #000; border: 2px solid #fff; color: #fff; padding: 0.75rem; text-align: center; font-size: 1rem; outline: none; text-transform: uppercase; margin-bottom: 1rem; }
@@ -157,7 +168,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title"> TEST VERSION PHASE 3.0</div>
+            <div class="login-title">THE ANTI-VTT VTT VERSION 8.0</div>
             <div class="toggle-container">
                 <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
                 <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
@@ -229,8 +240,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
         <button onclick="toggleFogDraw()" id="btn-fog-draw" class="tool-btn" style="display:none;">PLOT REVEAL</button>
         <button onclick="resetFog()" id="btn-fog-reset" class="tool-btn" style="display:none; color: #ff3333;">Reset Fog</button>
         <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
-        <button onclick="toggleDarknessManual()" id="btn-darkness-toggle" class="tool-btn">Force Darkness</button>
-    </div>
+            </div>
 
 
     <div class="toolbar hidden" id="torch-panel">
@@ -612,16 +622,6 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     }
 
 
-    function toggleDarknessManual() {
-        if (!tableState.isDM) return;
-        tableState.isDarknessActive = !tableState.isDarknessActive;
-        updateFogUI();
-        broadcastFoW();
-        draw();
-        addResultToHistoryTicker("[SYS]", 0, tableState.isDarknessActive ? "MANUAL DARKNESS ENGAGED" : "MANUAL DARKNESS LIFTED");
-    }
-
-
     function updateFogUI() {
         const btnToggle = document.getElementById('btn-fog-toggle');
         const btnDraw = document.getElementById('btn-fog-draw');
@@ -630,21 +630,6 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
         if (!btnToggle) return;
-
-
-        if (tableState.fowEnabled) {
-            btnToggle.innerText = "Disable Fog";
-            btnToggle.style.background = "#fff";
-            btnToggle.style.color = "#000";
-            btnDraw.style.display = "block";
-            btnReset.style.display = "block";
-        } else {
-            btnToggle.innerText = "Enable Fog";
-            btnToggle.style.background = "#000";
-            btnToggle.style.color = "#fff";
-            btnDraw.style.display = "none";
-            btnReset.style.display = "none";
-        }
 
 
         if (isDrawingFoW) {
@@ -1217,14 +1202,10 @@ async function setupCameraAndVideo() {
         label.innerText = characterName || "Player Connected"; 
         box.appendChild(videoEl); box.appendChild(label); container.appendChild(box);
     }
-    // --- MODULE EXPORT/IMPORT UTILITIES ---
 
 function exportTableState() {
-    // Stringify current state
     const stateString = JSON.stringify(tableState);
-    // Compress
     const compressedData = pako.deflate(stateString);
-    // Create File
     const blob = new Blob([compressedData], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1237,22 +1218,20 @@ function exportTableState() {
 }
 
 async function importD85Module(file) {
+    document.getElementById('loading-overlay').style.display = 'flex'; // Show spinner
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
-            // Decompress
             const decompressed = pako.inflate(new Uint8Array(e.target.result), { to: 'string' });
-            // Parse JSON
             tableState = JSON.parse(decompressed);
-            
-            // Re-render UI
             if (typeof draw === 'function') draw();
             alert(".d85 File loaded successfully!");
         } catch (err) {
-            console.error("Import failed:", err);
             alert("Invalid .d85 file.");
-        } // This closing brace was missing
-    }; // This closing brace was missing
+        } finally {
+            document.getElementById('loading-overlay').style.display = 'none'; // Hide spinner
+        }
+    };
     reader.readAsArrayBuffer(file);
 }
 
