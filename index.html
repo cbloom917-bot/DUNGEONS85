@@ -368,38 +368,41 @@
     });
     
     async function loadCloudImage(src, token) {
-        if (!src) return Promise.resolve(null);
-        if (tokenImageCache[src]) return Promise.resolve(tokenImageCache[src]);
+    if (!src) return Promise.resolve(null);
+    if (tokenImageCache[src]) return Promise.resolve(tokenImageCache[src]);
+    
+    try {
+        const fetchOptions = {};
         
-        try {
-            const fetchOptions = {};
-            if (token) {
-                fetchOptions.headers = { 'Authorization': `Bearer ${token}` };
-            }
-            
-            const cleanSrc = src.split('&key=')[0];
-            const response = await fetch(cleanSrc, fetchOptions);
-            
-            if (!response.ok) {
-                console.error("Failed to load image:", response.status);
-                return null;
-            }
-            
-            const blob = await response.blob();
-            return new Promise((resolve) => {
-                const img = new Image(); 
-                img.crossOrigin = "Anonymous"; 
-                img.src = URL.createObjectURL(blob); 
-                img.onload = () => { 
-                    tokenImageCache[src] = img; 
-                    resolve(img); 
-                };
-            });
-        } catch (e) { 
-            console.error("Load failed:", e);
-            return null; 
+        if (token && token.length > 0) {
+            fetchOptions.headers = { 'Authorization': `Bearer ${token}` };
         }
+        
+        const apiKey = "AIzaSyD504HDTxz2X9I_4syVoE1ogGhlNBcL928"; 
+        const urlWithKey = `${src.split('&key=')[0]}&key=${apiKey}`;
+        
+        const response = await fetch(urlWithKey, fetchOptions);
+        
+        if (!response.ok) {
+            console.error("401/403 Error: Check API key restrictions and File permissions", response.status);
+            return null;
+        }
+        
+        const blob = await response.blob();
+        return new Promise((resolve) => {
+            const img = new Image(); 
+            img.crossOrigin = "Anonymous"; 
+            img.src = URL.createObjectURL(blob); 
+            img.onload = () => { 
+                tokenImageCache[src] = img; 
+                resolve(img); 
+            };
+        });
+    } catch (e) { 
+        console.error("Load failed:", e);
+        return null; 
     }
+}
     
     function setRoleSelection(isDMSelection) { 
         tableState.isDM = isDMSelection; 
