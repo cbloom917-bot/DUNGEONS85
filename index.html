@@ -10,147 +10,95 @@
 <script src="https://accounts.google.com/gsi/client"></script>
 <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
 <style>
-* { box-sizing: border-box; font-family: monospace; }
-body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; height: 100vh; width: 100vw; -webkit-user-select: none; user-select: none; }
+    * { box-sizing: border-box; font-family: monospace; }
+    body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; width: 100vw; -webkit-user-select: none; user-select: none; }
 
     .flex { display: flex; }
     .flex-col { flex-direction: column; }
     .hidden { display: none !important; }
+
+    #top-nav { position: fixed; top: 0; left: 0; width: 100%; height: 60px; display: flex; align-items: center; justify-content: center; gap: 4rem; background-color: #000; z-index: 1000; }
+    .nav-link { color: #666; text-decoration: none; text-transform: uppercase; font-weight: bold; font-size: 1.1rem; letter-spacing: 0.1em; padding: 4px 10px; transition: color 0.2s ease; }
+    .nav-link:hover, .nav-link.active { background-color: transparent; color: #fff; }
     
     #login-screen { 
-    position: fixed; 
-    inset: 0; 
-    background-color: #000; 
-    z-index: 50; 
-    display: flex; 
-    flex-direction: column; 
-    align-items: center; 
-    justify-content: center; 
-    padding: 1rem;
-    border: none; 
-    margin: 0;  }
-
-.login-wrap { 
-    text-align: center; 
-    max-width: 400px; 
-    width: 100%; 
-    margin: 0 auto; 
-    border: none; }
-
-.login-title { 
-    font-size: 1.75rem; 
-    font-weight: bold; 
-    border: none;
-    padding-bottom: 0.5rem; 
-    margin-bottom: 1.5rem; 
-    text-transform: uppercase; 
-    letter-spacing: 0.1em; }
+        position: fixed; top: 60px; bottom: 0; left: 0; right: 0; 
+        background-color: #000; 
+        background-image: url('assets/background.png');
+        background-repeat: no-repeat;
+        background-position: top center;
+        background-size: 100% auto; 
+        z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; border: none; margin: 0; 
+    }
     
+    .login-center-stack { width: 100%; max-width: 400px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; }
+    .logo-container { width: 100%; max-width: 400px; margin: 0 auto 1.5rem auto; text-align: center; }
+    .logo-container img { width: 100%; height: auto; object-fit: contain; }
+    
+    .login-wrap { text-align: center; width: 100%; border: none; }
+    .login-title { font-size: 1.75rem; font-weight: bold; border: none; padding-bottom: 0.5rem; margin-bottom: 1.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
     .bw-input { width: 100%; background-color: #000; border: 2px solid #fff; color: #fff; padding: 0.75rem; text-align: center; font-size: 1rem; outline: none; text-transform: uppercase; margin-bottom: 1rem; }
-    .bw-input::placeholder { color: #444; }
     .bw-input:focus { background-color: #fff; color: #000; }
-    
     .toggle-container { display: flex; border: 2px solid #fff; margin-bottom: 1rem; }
     .toggle-btn { flex: 1; background: #000; color: #fff; border: none; padding: 0.5rem; font-weight: bold; cursor: pointer; text-transform: uppercase; }
     .toggle-btn.active { background: #fff; color: #000; }
-
     .bw-btn { width: 100%; background-color: #fff; color: #000; font-weight: bold; padding: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; border: 2px solid #fff; cursor: pointer; font-size: 1rem; }
     .bw-btn:hover { background-color: #000; color: #fff; }
 
-    #vtt-interface { 
-        position: fixed; 
-        inset: 0; 
-        display: flex; 
-        flex-direction: column; 
-        overflow: hidden; 
-        z-index: 10; 
-    }
-    canvas {
-    touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-    #vtt-canvas { 
-        flex: 1; 
-        min-height: 0;
-        position: relative; 
-        width: 100%; 
-        background-color: #000; 
-        cursor: grab; 
-        display: block; 
-    }
+    #vtt-interface { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; z-index: 10; }
+    canvas { touch-action: none; -webkit-user-select: none; user-select: none; }
+    #vtt-canvas { flex: 1; min-height: 0; position: relative; width: 100%; background-color: #000; cursor: grab; display: block; }
+    #vtt-canvas.plotting { cursor: crosshair !important; }
     
-    #vtt-canvas:active { cursor: grabbing; }
-
-    .dice-history-ticker, .video-ribbon {
-        flex-shrink: 0;
-    }
-    
-    /* FLOATING TOOLBARS */
     .toolbar { position: absolute; background: #000; border: 2px solid #fff; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; z-index: 10; }
-    #toolbar-left { top: 1rem; left: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 110px; }
-    #toolbar-right { top: 1rem; right: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 180px; }
+    #toolbar-left { top: 4rem; left: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 110px; }
+    #toolbar-right { top: 4rem; right: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 180px; }
     
     .panel-label { font-size: 10px; text-align: center; border-bottom: 1px solid #fff; padding-bottom: 2px; text-transform: uppercase; color: #888; letter-spacing: 0.05em; cursor: move; padding-top: 2px; background: #111; margin: -0.5rem -0.5rem 0.2rem -0.5rem; }
     .panel-label:active { background: #fff; color: #000; }
     
-    .tool-btn { 
-    background: #000; color: #fff; border: 1px solid #fff; 
-    padding: 0.25rem; font-size: 11px; text-transform: uppercase; 
-    cursor: pointer; font-weight: bold; width: 100%; text-align: center; 
-    display: block; 
-    margin-bottom: 4px; /* Move the margin here */
-}
+    .tool-btn { background: #000; color: #fff; border: 1px solid #fff; padding: 0.25rem; font-size: 11px; text-transform: uppercase; cursor: pointer; font-weight: bold; width: 100%; text-align: center; display: block; margin-bottom: 4px; transition: all 0.2s ease; }
     .tool-btn:hover { background: #fff; color: #000; }
     .grid-dice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
 
-    /* CONTEXT MENU OVERLAY WITH 5E SIZE COMMANDS */
     #ctx-menu { position: absolute; display: none; background: #000; border: 2px solid #fff; box-shadow: 4px 4px 0px 0px #fff; padding: 2px; z-index: 100; min-width: 150px; }
     .ctx-item { background: #000; color: #fff; border: none; padding: 6px 8px; font-size: 11px; font-weight: bold; text-transform: uppercase; text-align: left; width: 100%; display: block; cursor: pointer; }
     .ctx-item:hover { background: #fff; color: #000; }
     
-    /* Persistent Historical Ticker */
+    #torch-panel { top: 4rem; right: 14rem; width: 240px; box-shadow: 4px 4px 0px 0px #fff; z-index: 60; }
+    #turn-tracker-panel { top: 9rem; right: 14rem; width: 300px; box-shadow: 4px 4px 0px 0px #fff; z-index: 60; }
+    #fog-panel { top: 18.5rem; right: 14rem; width: 180px; box-shadow: 4px 4px 0px 0px #fff; z-index: 60; }
+
+    .torch-controls { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 10px; }
+    .torch-status { font-size: 14px; font-weight: bold; padding: 2px 6px; color: #666; cursor: pointer; text-transform: uppercase; transition: color 0.2s ease; }
+    .torch-status:hover { color: #aaa; }
+    .torch-status.active { color: #fff; background: transparent; cursor: default; }
+    #torch-clock { font-size: 1.5rem; font-weight: bold; color: #fff; letter-spacing: 0.05em; text-align: center; flex: 1; }
+
+    .tracker-wrapper { display: flex; align-items: flex-end; justify-content: center; gap: 0; margin-top: 15px; margin-bottom: 5px; }
+    .turn-col { display: flex; flex-direction: column; align-items: center; position: relative; }
+    .turn-lbl { font-size: 11px; font-weight: bold; height: 16px; text-transform: uppercase; color: #ccc; }
+    .turn-box { width: 32px; height: 32px; border: 2px solid #fff; border-right: none; background: #000; cursor: pointer; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 20px; }
+    .turn-col:last-of-type .turn-box { border-right: 2px solid #fff; }
+    .turn-box.checked::after { content: 'X'; color: #fff; }
+    .turn-reset-btn { background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; margin-left: 14px; padding-bottom: 4px; font-weight: bold; }
+    .turn-reset-btn:hover { color: #888; }
+    #turn-message { margin-top: 10px; font-size: 10px; text-align: center; color: #fff; text-transform: uppercase; min-height: 40px; line-height: 1.4; font-weight: bold; }
+
     .dice-history-ticker { width: 100%; height: 35px; background: #000; border-top: 2px solid #fff; display: flex; align-items: center; justify-content: flex-start; padding: 0 1rem; font-size: 12px; font-weight: bold; overflow-x: auto; white-space: nowrap; gap: 1.5rem; z-index: 20; }
     .ticker-entry { color: #fff; text-transform: uppercase; border-right: 1px dashed #333; padding-right: 1.5rem; display: inline-block; }
     .ticker-entry span { color: #888; margin-right: 4px; }
 
-    /* Video Ribbon Layout */
     .video-ribbon { width: 100%; background: #000; border-top: 2px solid #fff; padding: 0.5rem; display: flex; gap: 0.5rem; overflow-x: auto; height: 140px; align-items: center; justify-content: center; z-index: 20; }
-    .video-box { 
-    position: relative; 
-    height: 110px; 
-    aspect-ratio: 16/9; 
-    background: #111; 
-    border: 1px solid #fff; 
-    flex-shrink: 0; 
-    display: flex; 
-    align-items: center; 
-    justify-content: center; 
-    overflow: hidden; 
-    padding: 0; /* Change 10px to 0 */
-}
-   .video-box video { 
-    aspect-ratio: 16 / 9;
-    width: 100%; 
-    height: 100%; 
-    object-fit: contain; 
-    background: #111;
-    /* This combines the 80% zoom-out with your mirror effect */
-    transform: scaleX(-1);
-    -webkit-transform: scaleX(-1); /* Chrome, Safari, Opera */
-    -moz-transform: scaleX(-1);    /* Firefox */
-}
+    .video-box { position: relative; height: 110px; aspect-ratio: 16/9; background: #111; border: 1px solid #fff; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0; }
+    .video-box video { aspect-ratio: 16 / 9; width: 100%; height: 100%; object-fit: contain; background: #111; transform: scaleX(-1); -webkit-transform: scaleX(-1); -moz-transform: scaleX(-1); }
     .video-label { position: absolute; bottom: 4px; left: 4px; background: #000; color: #fff; font-size: 10px; padding: 2px 4px; border: 1px solid #fff; text-transform: uppercase; z-index: 5; }
-    
-    /* VIDEO CONTROLS OVERLAY */
     .video-controls-overlay { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; z-index: 5; opacity: 0.4; transition: opacity 0.2s ease; }
     .video-box:hover .video-controls-overlay { opacity: 1; }
     .media-toggle-btn { background: #000; color: #fff; border: 1px solid #fff; font-size: 8px; font-weight: bold; padding: 2px 4px; cursor: pointer; text-transform: uppercase; }
     .media-toggle-btn.muted-state { background: #ff3333; color: #fff; border-color: #ff3333; }
     .hardware-fail-alert { text-align: center; color: #666; font-size: 9px; padding: 10px; text-transform: uppercase; line-height: 1.3; font-weight: bold; }
 
-    /* DICE ANIMATION OVERLAYS */
     .dice-container-overlay { position: absolute; width: 120px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; pointer-events: none; z-index: 40; text-align: center; transition: opacity 0.5s ease-in-out; }
     .dice-sprite-frame { width: 100px; height: 100px; background-repeat: no-repeat; background-size: 700px 100px; background-position: 0px 0px; display: flex; align-items: center; justify-content: center; position: relative; }
     .dice-numerical-overlay { font-size: 24px; font-weight: bold; color: #fff; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000; display: none; z-index: 2; }
@@ -163,27 +111,36 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 </head>
 <body>
 
-<div id="login-screen" style="background: url('assets/background.png') no-repeat center center; background-size: 100% auto;">
+<nav id="top-nav">
+    <a href="index.html" class="nav-link active">PLAY</a>
+    <a href="merch.html" class="nav-link">MERCH</a>
+    <a href="faq.html" class="nav-link">FAQ</a>
+    <a href="privacy.html" class="nav-link">PRIVACY</a>
+    <a href="tos.html" class="nav-link">TOS</a>
+    <a href="contact.html" class="nav-link">CONTACT</a>
+</nav>
+
+<div id="login-screen">
     <div class="login-center-stack">
         <div class="logo-container">
-            <img src="assets/dungeons85logo.svg" alt="Basement 85 Logo">
+            <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title">VERSION 6.5.3</div>
+            <div class="login-title">VERSION 7.6.1</div>
             <div class="toggle-container">
-                <button type="button" id="role-dm" class="toggle-btn active" onclick="setRoleSelection(true)">GM (HOST)</button>
-                <button type="button" id="role-player" class="toggle-btn" onclick="setRoleSelection(false)">PLAYER (JOIN)</button>
+                <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
+                <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
             </div>
             <input type="text" id="char-name-input" placeholder="Character Name" class="bw-input" maxlength="20">
             <input type="text" id="room-id-input" placeholder="Room Name" class="bw-input" maxlength="20">
-            <button id="join-btn" class="bw-btn">create/join Table</button>
+            <button id="join-btn" class="bw-btn">CREATE/JOIN TABLE</button>
         </div>
     </div>
 </div>
 
 <div id="vtt-interface" class="hidden">
     <canvas id="vtt-canvas"></canvas>
-
+    
     <div id="ctx-menu">
         <button class="ctx-item" onclick="executeContextReveal()">Reveal/Hide</button>
         <button class="ctx-item" onclick="executeContextDuplicate()">Duplicate</button>
@@ -209,19 +166,51 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     </div>
 
     <div class="toolbar" id="toolbar-right">
-    <div class="panel-label">:: Tools ::</div>
-            <button onclick="openCloudVault('MAP')" class="tool-btn">Load Map</button>
-            <button onclick="openCloudVault('TOKEN')" class="tool-btn">Spawn Token</button>
+        <div class="panel-label">:: Tools ::</div>
+        <button onclick="openCloudVault('MAP')" class="tool-btn">Load Map</button>
+        <button onclick="openCloudVault('TOKEN')" class="tool-btn">Spawn Token</button>
+        <button onclick="toggleTorchPanel()" class="tool-btn">Torch Timer</button>
+        <button onclick="toggleTurnTracker()" class="tool-btn">Turn Tracker</button>
+        <button onclick="toggleFogPanel()" class="tool-btn">Fog of War</button>
+        <button onclick="forcePlayerFocus()" class="tool-btn">Focus View</button>
+        <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
+        <label class="tool-btn" style="cursor: pointer;">
+            Import JSON
+            <input type="file" accept=".json" style="display: none;" onchange="importAdventureJson(event)">
+        </label>
+        <button onclick="exportTableState()" class="tool-btn">Export JSON</button>
+        <div style="font-size: 9px; text-align: center; text-transform: uppercase; color: #fff; background: #222; padding: 4px;" id="room-display">Room: ---</div>
+    </div>
 
-            <label class="tool-btn" style="cursor: pointer;">
-                Import JSON
-                <input type="file" accept=".json" style="display: none;" onchange="importAdventureJson(event)">
-            </label>
+    <div class="toolbar hidden" id="fog-panel">
+        <div class="panel-label">:: Fog Of War ::</div>
+        <button onclick="toggleFogMode()" id="btn-fog-toggle" class="tool-btn">Enable Fog</button>
+        <button onclick="toggleFogDraw()" id="btn-fog-draw" class="tool-btn" style="display:none;">PLOT REVEAL</button>
+        <button onclick="resetFog()" id="btn-fog-reset" class="tool-btn" style="display:none; color: #ff3333;">Reset Fog</button>
+    </div>
 
-            <button onclick="exportTableState()" class="tool-btn">Export JSON</button>
-    
-    <div style="font-size: 9px; text-align: center; text-transform: uppercase; color: #fff; background: #222; padding: 4px;" id="room-display">Room: ---</div>
-</div>
+    <div class="toolbar hidden" id="torch-panel">
+        <div class="panel-label">:: Torch ::</div>
+        <div class="torch-controls">
+            <div id="torch-light-btn" class="torch-status" onclick="igniteTorch()">LIGHT</div>
+            <div id="torch-clock">00:00</div>
+            <div id="torch-dark-status" class="torch-status active" onclick="torchSeconds = 0; extinguishTorch()">DARK</div>
+        </div>
+    </div>
+
+    <div class="toolbar hidden" id="turn-tracker-panel">
+        <div class="panel-label">:: Turn Tracker ::</div>
+        <div class="tracker-wrapper">
+            <div class="turn-col"><div class="turn-lbl"></div><div class="turn-box" id="turn-box-1" onclick="checkTurn(1)"></div></div>
+            <div class="turn-col"><div class="turn-lbl">W</div><div class="turn-box" id="turn-box-2" onclick="checkTurn(2)"></div></div>
+            <div class="turn-col"><div class="turn-lbl"></div><div class="turn-box" id="turn-box-3" onclick="checkTurn(3)"></div></div>
+            <div class="turn-col"><div class="turn-lbl">W</div><div class="turn-box" id="turn-box-4" onclick="checkTurn(4)"></div></div>
+            <div class="turn-col"><div class="turn-lbl"></div><div class="turn-box" id="turn-box-5" onclick="checkTurn(5)"></div></div>
+            <div class="turn-col"><div class="turn-lbl">WR</div><div class="turn-box" id="turn-box-6" onclick="checkTurn(6)"></div><div style="position: absolute; right: -12px; bottom: 8px; font-size: 12px; font-weight: bold;">T</div></div>
+            <button class="turn-reset-btn" onclick="resetTurns()">&#x21BA;</button> 
+        </div>
+        <div id="turn-message"></div>
+    </div>
 
     <div id="ticker-log" class="dice-history-ticker">
         <div class="ticker-entry" id="ticker-empty-msg" style="color: #444; border: none;">[ Log Empty ]</div>
@@ -241,571 +230,353 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 </div>
 
 <script>
-    const GOOGLE_CLIENT_ID = "614025216557-rumtlu22kcsm5aka053t7p5p84826qt4.apps.googleusercontent.com";
-    const GOOGLE_API_KEY = "AIzaSyDyKlVDVbjifVbim_gI6A3dX9qBu4Nscis";
-    const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-
     let pickerApiLoaded = false;
-    let oauthToken = null;
     let currentPickerMode = null; 
 
-    function loadGooglePickerLibraries() {
-        gapi.load('picker', { 'callback': () => { pickerApiLoaded = true; } });
+    const adjectives = ["Gravel", "Iron", "Obsidian", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Corpse", "Broken"];
+    const nouns = ["Crypt", "Spawning", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Borg"];
+    
+    function generateRandomRoomName() {
+        if (!tableState.isDM) return;
+        const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const noun = nouns[Math.floor(Math.random() * nouns.length)];
+        const num = Math.floor(100 + Math.random() * 900);
+        document.getElementById('room-id-input').value = `${adj}${noun}${num}`.toUpperCase();
+    }
+    
+    function loadGooglePickerLibraries() { 
+        gapi.load('picker', { 'callback': () => { pickerApiLoaded = true; } }); 
     }
     window.addEventListener('DOMContentLoaded', loadGooglePickerLibraries);
-
+    
     function openCloudVault(mode) {
         if (!tableState.isDM) return;
         currentPickerMode = mode;
-        if (oauthToken) {
-            createPickerInstance();
-        } else {
-            const tokenClient = window.google.accounts.oauth2.initTokenClient({
-                client_id: GOOGLE_CLIENT_ID,
-                scope: GOOGLE_DRIVE_SCOPE,
-                callback: (tokenResponse) => {
-                    if (tokenResponse && tokenResponse.access_token) {
-                        oauthToken = tokenResponse.access_token;
-                        createPickerInstance();
-                    }
-                },
-            });
-            tokenClient.requestAccessToken();
-        }
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: "614025216557-rumtlu22kcsm5aka053t7p5p84826qt4.apps.googleusercontent.com", 
+            scope: "https://www.googleapis.com/auth/drive.file",
+            callback: (tokenResponse) => { 
+                if (tokenResponse && tokenResponse.access_token) { 
+                    createPickerInstance(tokenResponse.access_token); 
+                } 
+            },
+        });
+        tokenClient.requestAccessToken();
     }
-
-function createPickerInstance() {
-        if (!pickerApiLoaded || !oauthToken) return;
-        
-        // 1. Upgrade to a DocsView so we have access to folder settings
+    
+    function createPickerInstance(token) {
+        if (!pickerApiLoaded) return;
         const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
-        
-        // 2. THE FIX: Force the picker to show the user's folders instead of a flat list
-        view.setIncludeFolders(true);
-        
-        // 3. Keep your image filters (this will hide PDFs/text docs inside the folders)
+        view.setIncludeFolders(true); 
         view.setMimeTypes("image/png,image/jpeg,image/webp,image/svg+xml");
         
-        const picker = new google.picker.PickerBuilder()
+        new google.picker.PickerBuilder()
             .addView(view)
-            .setOAuthToken(oauthToken)
-            .setDeveloperKey(GOOGLE_API_KEY)
+            .setOAuthToken(token)
+            .setAppId("614025216557")
+            .setDeveloperKey("AIzaSyD504HDTxz2X9I_4syVoE1ogGhlNBcL928")
             .setCallback(handlePickerSelection)
             .setTitle(currentPickerMode === 'MAP' ? "Select Map" : "Select Token")
-            .build();
-            
-        picker.setVisible(true);
+            .build()
+            .setVisible(true);
     }
-
+    
     function handlePickerSelection(data) {
         if (data[google.picker.Response.ACTION] === google.picker.Action.PICKED) {
             const doc = data[google.picker.Response.DOCUMENTS][0];
             const fileId = doc[google.picker.Document.ID];
-            const directStreamUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${GOOGLE_API_KEY}`;
+            const publicDirectUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+            
             if (currentPickerMode === 'MAP') {
-                tableState.mapSrc = directStreamUrl;
-                socket.emit('updateMapImage', directStreamUrl);
-                loadCloudImage(directStreamUrl).then(() => draw());
+                tableState.mapSrc = publicDirectUrl; 
+                socket.emit('updateMapImage', publicDirectUrl); 
+                loadCloudImage(publicDirectUrl).then(() => draw());
             } else if (currentPickerMode === 'TOKEN') {
-                const newToken = {
-                    id: "token-" + Date.now() + Math.random(),
-                    src: directStreamUrl, 
-                    x: (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom,
-                    y: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom,
-                    size: 100,
-                    hidden: true
+                const newToken = { 
+                    id: "token-" + Date.now() + Math.random(), 
+                    src: publicDirectUrl, 
+                    x: (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom, 
+                    y: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom, 
+                    size: 100, 
+                    hidden: true 
                 };
-                tableState.tokens.push(newToken);
-                loadCloudImage(directStreamUrl).then(() => draw());
+                tableState.tokens.push(newToken); 
+                loadCloudImage(publicDirectUrl).then(() => draw()); 
                 broadcastTokensMatrixChange();
             }
         }
     }
-
-    let tableState = {
-        playerName: '',
-        isDM: true,
-        isEraseMode: false,
-        mapSrc: null,
-        tokens: [],
-        camera: { x: 0, y: 0, zoom: 1 }
+    
+    let tableState = { 
+        playerName: '', 
+        isDM: false, 
+        mapSrc: null, 
+        tokens: [], 
+        camera: { x: 0, y: 0, zoom: 1 }, 
+        fowEnabled: false, 
+        fowPolygons: [], 
+        isDarknessActive: false 
     };
-
+    
+    let isDrawingFoW = false;
+    let currentFoWPolygon = [];
+    let currentMouseWorldX = 0;
+    let currentMouseWorldY = 0;
+    
     let tokenImageCache = {};
     let socket = null;
     let peer = null;
     let localStream = null;
     let currentActiveRoomArray = [];
-
+    
     const canvas = document.getElementById('vtt-canvas');
     const ctx = canvas.getContext('2d');
     const ctxMenu = document.getElementById('ctx-menu');
+    const fogCanvas = document.createElement('canvas');
+    const fogCtx = fogCanvas.getContext('2d');
     let contextSelectedToken = null;
     
-    window.addEventListener('DOMContentLoaded', () => {
-        window.addEventListener('click', () => { ctxMenu.style.display = 'none'; });
-        window.addEventListener('beforeunload', () => { if (socket) socket.disconnect(); });
+    window.addEventListener('DOMContentLoaded', () => { 
+        window.addEventListener('click', () => { ctxMenu.style.display = 'none'; }); 
+        window.addEventListener('beforeunload', () => { if (socket) { socket.emit('disconnect'); socket.disconnect(); } }); 
     });
-
-    function loadCloudImage(src) {
+    
+    async function loadCloudImage(src) {
         if (!src) return Promise.resolve(null);
         if (tokenImageCache[src]) return Promise.resolve(tokenImageCache[src]);
+        
         return new Promise((resolve) => {
-            const img = new Image();
-            img.crossOrigin = "Anonymous";
-            img.onload = () => { tokenImageCache[src] = img; resolve(img); };
-            img.onerror = () => resolve(null);
-            img.src = src;
+            const img = new Image(); 
+            img.crossOrigin = "Anonymous"; 
+            img.src = src; 
+            img.onload = () => { 
+                tokenImageCache[src] = img; 
+                resolve(img); 
+            };
+            img.onerror = () => { resolve(null); };
         });
     }
-
-    function setRoleSelection(isDMSelection) {
-        tableState.isDM = isDMSelection;
-        document.getElementById('role-dm').classList.toggle('active', isDMSelection);
-        document.getElementById('role-player').classList.toggle('active', !isDMSelection);
+    
+    function setRoleSelection(isDMSelection) { 
+        tableState.isDM = isDMSelection; 
+        document.getElementById('role-dm').classList.toggle('active', isDMSelection); 
+        document.getElementById('role-player').classList.toggle('active', !isDMSelection); 
     }
-
-    function resizeCanvas() {
+    
+    function resizeCanvas() { 
         canvas.width = canvas.clientWidth; 
         canvas.height = canvas.clientHeight; 
-        draw();
+        fogCanvas.width = canvas.width; 
+        fogCanvas.height = canvas.height; 
+        draw(); 
     }
     window.addEventListener('resize', resizeCanvas);
-
+    
     document.getElementById('join-btn').addEventListener('click', () => {
         const nameInput = document.getElementById('char-name-input').value.trim();
         const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
-        if (!nameInput || !roomInput) return;
-        tableState.playerName = nameInput;
-        setupCameraAndVideo().then(() => {
-            initHybridMediaVttStack(roomInput, nameInput);
+        if (!nameInput || !roomInput) return alert("Please enter both a Character Name and a Room Name.");
+        tableState.playerName = nameInput; 
+        setupCameraAndVideo().then(() => { 
+            initHybridMediaVttStack(roomInput, nameInput); 
         });
     });
-
-    function toggleLocalAudio() {
-        if (!localStream) return;
-        const track = localStream.getAudioTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            const btn = document.getElementById('toggle-mic-btn');
-            btn.innerText = track.enabled ? "Mute" : "Unmute";
-            btn.classList.toggle('muted-state', !track.enabled);
-        }
+    
+    function forcePlayerFocus() { 
+        if (!tableState.isDM || !socket) return; 
+        socket.emit('forceCamera', tableState.camera); 
     }
-
-    function toggleLocalVideo() {
-        if (!localStream) return;
-        const track = localStream.getVideoTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            const btn = document.getElementById('toggle-cam-btn');
-            btn.innerText = track.enabled ? "Cam Off" : "Cam On";
-            btn.classList.toggle('muted-state', !track.enabled);
-        }
+    
+    function toggleLocalAudio() { 
+        if (!localStream) return; 
+        const track = localStream.getAudioTracks()[0]; 
+        if (track) { 
+            track.enabled = !track.enabled; 
+            const btn = document.getElementById('toggle-mic-btn'); 
+            btn.innerText = track.enabled ? "Mute" : "Unmute"; 
+            btn.classList.toggle('muted-state', !track.enabled); 
+        } 
     }
-
+    
+    function toggleLocalVideo() { 
+        if (!localStream) return; 
+        const track = localStream.getVideoTracks()[0]; 
+        if (track) { 
+            track.enabled = !track.enabled; 
+            const btn = document.getElementById('toggle-cam-btn'); 
+            btn.innerText = track.enabled ? "Cam Off" : "Cam On"; 
+            btn.classList.toggle('muted-state', !track.enabled); 
+        } 
+    }
+    
     function initHybridMediaVttStack(roomName, playerName) {
-        const webrtcIceConfig = { config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] } };
-        peer = new Peer(undefined, webrtcIceConfig);
-        peer.on('disconnected', () => { peer.reconnect(); });
+        if (socket) socket.disconnect();
+        
+        peer = new Peer(undefined, { config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] } });
+        
         peer.on('open', (peerId) => {
             socket = io("https://newvtt.onrender.com", { transports: ["websocket"] });
+            
             socket.on('connect', () => {
-                document.getElementById('room-display').innerText = `Room: ${roomName}`;
-                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('room-display').innerText = `Room: ${roomName}`; 
+                document.getElementById('top-nav').classList.add('hidden'); 
+                document.getElementById('login-screen').classList.add('hidden'); 
                 document.getElementById('vtt-interface').classList.remove('hidden');
-
-                const emptyMsg = document.getElementById('ticker-empty-msg');
-                if (emptyMsg) emptyMsg.remove();
-
-                setTimeout(() => {
-                    const entryMessage = tableState.isDM 
-                        ? `${tableState.playerName} HAS CREATED THE TABLE` 
-                        : `${tableState.playerName} HAS JOINED THE TABLE`;
-                    
-                    socket.emit('playerNotification', entryMessage);
-                }, 500);
-
-               if (!tableState.isDM) {
-                    const dmToolbar = document.getElementById('toolbar-right');
-                    if (dmToolbar) dmToolbar.remove();
-                }
-
-                setTimeout(() => {
-                    resizeCanvas();
-                    makeElementsDraggable();
-                }, 50);
                 
+                setTimeout(() => { resizeCanvas(); makeElementsDraggable(); }, 50);
                 socket.emit('joinRoom', { roomName, playerName, isDM: tableState.isDM, peerId });
             });
             
-            socket.on('updatePlayerList', (playersArray) => {
-                currentActiveRoomArray.forEach(cachedPeer => {
-                    const staysConnected = playersArray.some(p => p.peerId === cachedPeer.peerId);
-                    if (!staysConnected) {
-                        const deadBox = document.getElementById(`video-${cachedPeer.peerId}`);
-                        if (deadBox) deadBox.remove();
-                    }
-                });
-                currentActiveRoomArray = playersArray;
-                playersArray.forEach(p => {
-                    if (p.peerId !== peerId && localStream && !document.getElementById(`video-${p.peerId}`)) {
-                        if (peerId > p.peerId) {
-                            const call = peer.call(p.peerId, localStream);
-                            call.on('stream', (remoteStream) => { addVideoFeed(remoteStream, p.peerId, p.name); });
-                        }
-                    }
-                });
+            socket.on('syncMap', (mapSrc) => { 
+                tableState.mapSrc = mapSrc; 
+                loadCloudImage(mapSrc).then(() => draw()); 
             });
-            socket.on('joinError', (errorMsg) => {
-                alert(errorMsg);
-                window.location.reload(); // Instantly resets them back to the login screen
-            });
-            socket.on('syncMap', (mapSrc) => {
-                tableState.mapSrc = mapSrc;
-                loadCloudImage(mapSrc).then(() => draw());
-            });
-            socket.on('syncTokens', (incomingTokens) => {
+            
+            socket.on('syncTokens', (incomingTokens) => { 
                 tableState.tokens = incomingTokens; 
-                incomingTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
-                draw();
+                incomingTokens.forEach(t => loadCloudImage(t.src).then(() => draw())); 
+                draw(); 
             });
-            socket.on('tokenMoved', (data) => {
-                const match = tableState.tokens.find(t => t.id === data.id);
-                if (match) { match.x = data.x; match.y = data.y; draw(); }
+            
+            socket.on('tokenMoved', (data) => { 
+                const match = tableState.tokens.find(t => t.id === data.id); 
+                if (match) { match.x = data.x; match.y = data.y; draw(); } 
             });
-            socket.on('diceRolledAnimation', (data) => {
-                executeDiceOverlayAnimation(data.sides, data.result, data.player, data.screenX, data.screenY);
-            });
-           socket.on('playerNotification', (msg) => { 
-                addResultToHistoryTicker("[SYS]", 0, msg); 
-});
-        });
-        peer.on('call', (call) => {
-            call.answer(localStream);
-            call.on('stream', (remoteStream) => {
-                const identity = currentActiveRoomArray.find(p => p.peerId === call.peer);
-                addVideoFeed(remoteStream, call.peer, identity ? identity.name : "Player Connected");
-            });
+            
+            socket.on('diceRolledAnimation', (data) => { executeDiceOverlayAnimation(data.sides, data.result, data.player, data.screenX, data.screenY); });
+            socket.on('syncCamera', (cameraData) => { if (tableState.isDM) return; tableState.camera = cameraData; draw(); });
+            socket.on('syncFoW', (fowData) => { tableState.fowEnabled = fowData.enabled; tableState.fowPolygons = fowData.polygons; tableState.isDarknessActive = fowData.darkness; draw(); });
         });
     }
+    
+    function toggleFogPanel() { if (tableState.isDM) document.getElementById('fog-panel').classList.toggle('hidden'); }
+    function broadcastFoW() { if (tableState.isDM && socket) socket.emit('updateFoW', { enabled: tableState.fowEnabled, polygons: tableState.fowPolygons, darkness: tableState.isDarknessActive }); }
+    function toggleFogMode() { if (!tableState.isDM) return; tableState.fowEnabled = !tableState.fowEnabled; updateFogUI(); broadcastFoW(); draw(); }
+    function toggleFogDraw() { if (!tableState.isDM || !tableState.fowEnabled) return; isDrawingFoW = !isDrawingFoW; updateFogUI(); draw(); }
+    function resetFog() { if (!tableState.isDM) return; tableState.fowPolygons = []; isDrawingFoW = false; updateFogUI(); broadcastFoW(); draw(); }
 
-    function broadcastTokensMatrixChange() {
-        if (!tableState.isDM || !socket) return;
-        const leanTokens = tableState.tokens.map(t => ({
-            id: t.id,
-            src: t.src, 
-            x: t.x,
-            y: t.y,
-            size: t.size,
-            hidden: t.hidden
-        }));
-        socket.emit('updateTokensMatrix', leanTokens);
+    function updateFogUI() {
+        const btnToggle = document.getElementById('btn-fog-toggle');
+        const btnDraw = document.getElementById('btn-fog-draw');
+        const btnReset = document.getElementById('btn-fog-reset');
+        if (!btnToggle) return;
+        btnToggle.innerText = tableState.fowEnabled ? "Disable Fog" : "Enable Fog"; 
+        btnDraw.style.display = tableState.fowEnabled ? "block" : "none"; 
+        btnReset.style.display = tableState.fowEnabled ? "block" : "none";
+        document.getElementById('vtt-canvas').classList.toggle('plotting', isDrawingFoW);
     }
-
+    
+    function broadcastTokensMatrixChange() { if (tableState.isDM && socket) socket.emit('updateTokensMatrix', tableState.tokens); }
+    
     function importAdventureJson(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const json = JSON.parse(e.target.result);
-                tableState.tokens = json.tokens || [];
-                tableState.mapSrc = json.savedMapSrc || null;
-                if (tableState.mapSrc) {
-                    socket.emit('updateMapImage', tableState.mapSrc);
-                    loadCloudImage(tableState.mapSrc).then(() => draw());
-                }
-                broadcastTokensMatrixChange();
-                tableState.tokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
-                draw();
-            } catch (err) { alert("JSON Parse Error."); }
-        };
+        const file = event.target.files[0]; 
+        const reader = new FileReader(); 
+        reader.onload = function(e) { 
+            const json = JSON.parse(e.target.result); 
+            tableState.tokens = json.tokens || []; 
+            tableState.mapSrc = json.savedMapSrc || null; 
+            if (tableState.mapSrc) loadCloudImage(tableState.mapSrc).then(() => draw()); 
+            tableState.tokens.forEach(t => loadCloudImage(t.src).then(() => draw())); 
+            draw(); 
+        }; 
         reader.readAsText(file);
     }
-
+    
     function exportTableState() {
-        const stateExport = { savedMapSrc: tableState.mapSrc, tokens: tableState.tokens };
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateExport));
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.setAttribute("href", dataStr); downloadAnchor.setAttribute("download", "vtt-table-state.json");
-        document.body.appendChild(downloadAnchor); downloadAnchor.click(); downloadAnchor.remove();
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tableState));
+        const downloadAnchor = document.createElement('a'); 
+        downloadAnchor.setAttribute("href", dataStr); 
+        downloadAnchor.setAttribute("download", "vtt-table-state.json"); 
+        document.body.appendChild(downloadAnchor); 
+        downloadAnchor.click(); 
+        downloadAnchor.remove();
     }
-
-    let isDraggingWorkspace = false;
-    let dragStart = { x: 0, y: 0 };
-    let selectedToken = null;
-
+    
+    let isDraggingWorkspace = false, dragStart = { x: 0, y: 0 }, selectedToken = null;
+    
     canvas.addEventListener('contextmenu', (e) => {
-        if (!tableState.isDM) return; e.preventDefault();
+        if (!tableState.isDM) return; 
+        e.preventDefault();
         const rect = canvas.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
-        contextSelectedToken = null;
-        for (let i = tableState.tokens.length - 1; i >= 0; i--) {
-            const t = tableState.tokens[i];
-            if (Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2) { contextSelectedToken = t; break; }
-        }
-        if (contextSelectedToken) {
-            ctxMenu.style.left = `${e.clientX}px`; ctxMenu.style.top = `${e.clientY}px`; ctxMenu.style.display = 'block';
-        }
+        contextSelectedToken = tableState.tokens.find(t => Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2);
+        if (contextSelectedToken) { ctxMenu.style.left = `${e.clientX}px`; ctxMenu.style.top = `${e.clientY}px`; ctxMenu.style.display = 'block'; }
     });
-
-    canvas.addEventListener('mousedown', (e) => { // <--- Ensure 'e' is inside these parentheses
-    if (e.button === 2) return; 
-    ctxMenu.style.display = 'none';
     
-    const rect = canvas.getBoundingClientRect();
-    const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
-    const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
-
-    // Token Selection logic...
-    selectedToken = null;
-    for (let i = tableState.tokens.length - 1; i >= 0; i--) {
-        const t = tableState.tokens[i];
-        if (!tableState.isDM && t.hidden) continue;
-        if (Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2) {
-            selectedToken = t; 
-            break; 
-        }
-    }
+    canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 2) return; 
+        ctxMenu.style.display = 'none'; 
+        const rect = canvas.getBoundingClientRect();
+        const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
+        const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
+        if (tableState.isDM && isDrawingFoW) { currentFoWPolygon.push({x: worldX, y: worldY}); draw(); return; }
+        selectedToken = tableState.tokens.slice().reverse().find(t => Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2);
+        isDraggingWorkspace = !selectedToken; 
+        dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    });
     
-    isDraggingWorkspace = !selectedToken; 
-    dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-});
-
     canvas.addEventListener('mousemove', (e) => {
-    // FIX: Ensure movement happens if we have a token OR are dragging the workspace
-    if (!isDraggingWorkspace && !selectedToken) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left; 
-    const mouseY = e.clientY - rect.top;
-    
-    // Calculate movement delta
-    const dx = (mouseX - dragStart.x) / tableState.camera.zoom;
-    const dy = (mouseY - dragStart.y) / tableState.camera.zoom;
-
-    if (selectedToken) {
-        // MOVE TOKEN
-        selectedToken.x += dx;
-        selectedToken.y += dy;
-        socket.emit('tokenMove', { id: selectedToken.id, x: selectedToken.x, y: selectedToken.y });
-    } else if (isDraggingWorkspace) {
-        // PAN CAMERA
-        tableState.camera.x += (mouseX - dragStart.x);
-        tableState.camera.y += (mouseY - dragStart.y);
-    }
-    
-    dragStart = { x: mouseX, y: mouseY }; 
-    draw();
-});
-
-    window.addEventListener('mouseup', () => {
-        if (isDraggingWorkspace && selectedToken) broadcastTokensMatrixChange();
-        isDraggingWorkspace = false; selectedToken = null;
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
+        if (!isDraggingWorkspace && !selectedToken) return;
+        const dx = (mouseX - dragStart.x) / tableState.camera.zoom, dy = (mouseY - dragStart.y) / tableState.camera.zoom;
+        if (selectedToken) { selectedToken.x += dx; selectedToken.y += dy; socket.emit('tokenMove', { id: selectedToken.id, x: selectedToken.x, y: selectedToken.y }); } 
+        else if (isDraggingWorkspace) { tableState.camera.x += (mouseX - dragStart.x); tableState.camera.y += (mouseY - dragStart.y); }
+        dragStart = { x: mouseX, y: mouseY }; draw();
     });
-
-    canvas.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (e.deltaY < 0) tableState.camera.zoom *= 1.1; else tableState.camera.zoom /= 1.1;
-        draw();
-    });
-
-    function executeContextResize(newSize) {
-        if (!contextSelectedToken) return;
-        contextSelectedToken.size = newSize;
-        draw();
-        broadcastTokensMatrixChange();
+    
+    window.addEventListener('mouseup', () => { if (isDraggingWorkspace && selectedToken) broadcastTokensMatrixChange(); isDraggingWorkspace = false; selectedToken = null; });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); tableState.camera.zoom *= (e.deltaY < 0 ? 1.1 : 1 / 1.1); draw(); });
+    
+    function draw() {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); 
+        ctx.save(); ctx.translate(tableState.camera.x, tableState.camera.y); ctx.scale(tableState.camera.zoom, tableState.camera.zoom);
+        let mapImg = tokenImageCache[tableState.mapSrc];
+        if (mapImg && mapImg.complete) ctx.drawImage(mapImg, -mapImg.width / 2, -mapImg.height / 2);
+        for (let t of tableState.tokens) { 
+            let img = tokenImageCache[t.src]; 
+            if (img && img.complete) ctx.drawImage(img, t.x - t.size / 2, t.y - t.size / 2, t.size, t.size); 
+        }
+        ctx.restore(); 
     }
-
-    function executeContextReveal() {
-        if (!contextSelectedToken) return; contextSelectedToken.hidden = !contextSelectedToken.hidden;
-        draw(); broadcastTokensMatrixChange();
+    
+    function rollDice(sides) { socket.emit('executeDiceRoll', { sides, result: Math.floor(Math.random() * sides) + 1, player: tableState.playerName }); }
+    function executeDiceOverlayAnimation(sides, result, rollerName) { addResultToHistoryTicker(rollerName, sides, result); }
+    function addResultToHistoryTicker(player, sides, result) { 
+        const ticker = document.getElementById('ticker-log'); 
+        const entry = document.createElement('div'); entry.className = 'ticker-entry'; 
+        entry.innerHTML = `<span>[${new Date().toLocaleTimeString()}]</span> ${player} ROLLED D${sides}: ${result}`; 
+        ticker.appendChild(entry); ticker.scrollLeft = ticker.scrollWidth; 
     }
+    
+    function toggleTorchPanel() { document.getElementById('torch-panel').classList.toggle('hidden'); }
+    function toggleTurnTracker() { document.getElementById('turn-tracker-panel').classList.toggle('hidden'); }
+    function checkTurn(n) { document.getElementById(`turn-box-${n}`).classList.toggle('checked'); }
+    function resetTurns() { for(let i=1; i<=6; i++) document.getElementById(`turn-box-${i}`).classList.remove('checked'); }
 
-    function executeContextDuplicate() {
-        if (!contextSelectedToken) return;
-        const clone = {
-            id: "token-" + Date.now() + Math.random(), src: contextSelectedToken.src,
-            x: contextSelectedToken.x + 20, y: contextSelectedToken.y,
-            size: contextSelectedToken.size, hidden: contextSelectedToken.hidden
-        };
-        tableState.tokens.push(clone); draw(); broadcastTokensMatrixChange();
+    async function setupCameraAndVideo() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            document.getElementById('local-video').srcObject = localStream; 
+        } catch (err) { console.error("Hardware Access Failed"); }
     }
-
-    function executeContextDelete() {
-        if (!contextSelectedToken) return;
-        tableState.tokens = tableState.tokens.filter(t => t.id !== contextSelectedToken.id);
-        draw(); broadcastTokensMatrixChange();
-    }
-
+    
     function makeElementsDraggable() {
         document.querySelectorAll('.toolbar').forEach(toolbar => {
-            const handle = toolbar.querySelector('.panel-label');
-            let xOffset = 0, yOffset = 0, xStart = 0, yStart = 0;
-            handle.onmousedown = (e) => {
-                xStart = e.clientX; yStart = e.clientY;
-                document.onmousemove = (ev) => {
-                    ev.preventDefault();
-                    xOffset = xStart - ev.clientX; yOffset = yStart - ev.clientY;
-                    xStart = ev.clientX; yStart = ev.clientY;
-                    toolbar.style.top = (toolbar.offsetTop - yOffset) + "px";
-                    toolbar.style.left = (toolbar.offsetLeft - xOffset) + "px";
-                };
-                document.onmouseup = () => { document.onmousemove = null; document.onmouseup = null; };
+            const handle = toolbar.querySelector('.panel-label'); 
+            handle.onmousedown = (e) => { 
+                let x = e.clientX, y = e.clientY;
+                document.onmousemove = (ev) => { 
+                    toolbar.style.top = (toolbar.offsetTop - (y - ev.clientY)) + "px"; 
+                    toolbar.style.left = (toolbar.offsetLeft - (x - ev.clientX)) + "px"; 
+                    x = ev.clientX; y = ev.clientY;
+                }; 
+                document.onmouseup = () => { document.onmousemove = null; }; 
             };
         });
     }
-
- async function draw() {
-        ctx.fillStyle = '#000000'; 
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.save(); 
-        ctx.translate(tableState.camera.x, tableState.camera.y); 
-        ctx.scale(tableState.camera.zoom, tableState.camera.zoom);
-
-        // 1. DRAW MAP FIRST (Background)
-        let mapImgAsset = tokenImageCache[tableState.mapSrc];
-        if (mapImgAsset && mapImgAsset.complete) {
-            ctx.drawImage(mapImgAsset, -mapImgAsset.width / 2, -mapImgAsset.height / 2);
-        } else {
-            // FIX: Restored Grid fallback logic
-            ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1;
-            for (let i = -1500; i <= 1500; i += 40) {
-                ctx.beginPath(); ctx.moveTo(i, -1500); ctx.lineTo(i, 1500); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(-1500, i); ctx.lineTo(1500, i); ctx.stroke();
-            }
-        }
-
-        // 2. DRAW TOKENS SECOND (Foreground)
-        for (let t of tableState.tokens) {
-            
-            // --- NEW INVISIBILITY CLOAK ---
-            // If the token is hidden and the user is a player, skip to the next token
-            if (t.hidden && !tableState.isDM) {
-                continue; 
-            }
-            // ------------------------------
-
-            ctx.save();
-            if (tableState.isDM && t.hidden) ctx.globalAlpha = 0.50;
-            let imgAsset = tokenImageCache[t.src];
-            if (imgAsset && imgAsset.complete) {
-                ctx.drawImage(imgAsset, t.x - t.size / 2, t.y - t.size / 2, t.size, t.size);
-            }
-            ctx.restore();
-        }
-        ctx.restore();
-    }
-
-    function rollDice(sides) {
-        const finalResult = Math.floor(Math.random() * sides) + 1;
-        socket.emit('executeDiceRoll', {
-            sides, result: finalResult, player: tableState.playerName,
-            screenX: Math.floor(15 + Math.random() * 60), screenY: Math.floor(15 + Math.random() * 60)
-        });
-    }
-
-    function executeDiceOverlayAnimation(sides, result, rollerName, posX, posY) {
-        const interfaceWrapper = document.getElementById('vtt-interface');
-        const container = document.createElement('div'); container.className = 'dice-container-overlay';
-        container.style.left = `${posX}%`; container.style.top = `${posY}%`;
-        const spriteFrame = document.createElement('div'); spriteFrame.className = 'dice-sprite-frame';
-        spriteFrame.style.backgroundImage = `url('assets/dice/d${sides}.png')`;
-        const numberOverlay = document.createElement('div'); numberOverlay.className = 'dice-numerical-overlay';
-        numberOverlay.innerText = result;
-        const labelCard = document.createElement('div'); labelCard.className = 'dice-player-label';
-        labelCard.innerText = rollerName;
-        spriteFrame.appendChild(numberOverlay); container.appendChild(spriteFrame);
-        container.appendChild(labelCard); interfaceWrapper.appendChild(container);
-        let frameIdx = 0; const maxTumbleCycles = 12; let frameCounter = 0;
-        const tumbleTimer = setInterval(() => {
-            frameIdx = (frameIdx + 1) % 6; spriteFrame.style.backgroundPosition = `-${frameIdx * 100}px 0px`;
-            frameCounter++;
-            if (frameCounter >= maxTumbleCycles) {
-                clearInterval(tumbleTimer); spriteFrame.style.backgroundPosition = `-600px 0px`;
-                numberOverlay.style.display = 'block'; addResultToHistoryTicker(rollerName, sides, result);
-                setTimeout(() => { container.style.opacity = '0'; setTimeout(() => container.remove(), 500); }, 5000);
-            }
-        }, 75);
-    }
-
-    function addResultToHistoryTicker(player, sides, result) {
-        const ticker = document.getElementById('ticker-log');
-        const emptyMsg = document.getElementById('ticker-empty-msg');
-        if (emptyMsg) emptyMsg.remove();
-        const logEntry = document.createElement('div'); logEntry.className = 'ticker-entry';
-        logEntry.innerHTML = sides === 0 
-            ? `<span>[SYS]</span> ${result}`
-            : `<span>[${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}]</span> ${player} ROLLED D${sides}: ${result}`;
-        ticker.appendChild(logEntry);
-        ticker.scrollLeft = ticker.scrollWidth;
-    }
-
-async function setupCameraAndVideo() {
-        const container = document.getElementById('local-video-container');
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ 
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    aspectRatio: { ideal: 1.7777777778 }
-                },
-                audio: true
-            });
-
-            const localVideoEl = document.getElementById('local-video');
-            if (localVideoEl) {
-                localVideoEl.srcObject = localStream;
-            }
-            if (typeof peerId !== 'undefined') {
-                addVideoFeed(localStream, peerId, tableState.playerName);
-            }
-        } catch (err) {
-            console.error("Camera failed to start:", err);
-            const failAlert = document.createElement('div'); 
-            failAlert.className = 'hardware-fail-alert';
-            failAlert.innerText = (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') 
-                ? "SECURITY BLOCK:\nSSL/HTTPS Required" : "CAMERA BLOCKED\nOR NOT FOUND";
-            container.insertBefore(failAlert, container.firstChild); 
-            const vid = document.getElementById('local-video');
-            if (vid) vid.remove();
-        }
-    }
-
-    function addVideoFeed(stream, peerId, characterName) {
-        const existingBox = document.getElementById(`video-${peerId}`);
-        if (existingBox) {
-            const existingLabel = document.getElementById(`label-${peerId}`);
-            if (existingLabel && characterName) {
-                existingLabel.innerText = characterName;
-            }
-            return;
-        }
-
-        const container = document.getElementById('peer-videos-container');
-        const box = document.createElement('div'); 
-        box.className = "video-box"; 
-        box.id = `video-${peerId}`;
-        
-        const videoEl = document.createElement('video'); 
-        videoEl.srcObject = stream; 
-        videoEl.autoplay = true; 
-        videoEl.playsInline = true;
-        videoEl.muted = false; 
-        
-        const label = document.createElement('div'); 
-        label.className = "video-label"; 
-        label.id = `label-${peerId}`; 
-        label.innerText = characterName || "Player Connected"; 
-        
-        box.appendChild(videoEl); 
-        box.appendChild(label); 
-        container.appendChild(box);
-    }
-
+    
     draw();
 </script>
 </body>
