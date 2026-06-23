@@ -7,7 +7,6 @@
     <title>Dungeons '85</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-    <script src="config.js"></script>
     <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
 
 <style>
@@ -346,11 +345,11 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
 
     function generateRandomRoomName() {
-        const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-        const noun = nouns[Math.floor(Math.random() * nouns.length)];
-        const num = Math.floor(100 + Math.random() * 900); 
-        document.getElementById('room-id-input').value = `${adj}${noun}${num}`.toUpperCase();
-    }
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    const num = Math.floor(100 + Math.random() * 900);
+    document.getElementById('room-id-input').value = `${adj}${noun}${num}`;
+}
 
     function setRoleSelection(isDMSelection) {
         tableState.isDM = isDMSelection;
