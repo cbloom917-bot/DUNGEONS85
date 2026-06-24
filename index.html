@@ -176,7 +176,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title"> Version 8.2</div>
+            <div class="login-title"> Version 8.5</div>
             <div class="toggle-container">
                 <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
                 <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
@@ -320,6 +320,10 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera: { x: 0, y: 0, zoom: 1 }, fowEnabled: false, fowPolygons: [], isDarknessActive: false };
     let tokenImageCache = {}, socket = null, peer = null, localStream = null, currentActiveRoomArray = [];
     let isDrawingFoW = false, currentFoWPolygon = [], currentMouseWorldX = 0, currentMouseWorldY = 0;
+    
+    // ADDED: Declare contextSelectedToken globally
+    let contextSelectedToken = null; 
+    
     const canvas = document.getElementById('vtt-canvas'), ctx = canvas.getContext('2d'), ctxMenu = document.getElementById('ctx-menu');
     const fogCanvas = document.createElement('canvas'), fogCtx = fogCanvas.getContext('2d');
 
@@ -498,37 +502,33 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             });
 
 
-            ssocket.on('updatePlayerList', (playersArray) => {
-    // 1. Remove video feeds for players who left
-    currentActiveRoomArray.forEach(cachedPeer => {
-        const staysConnected = playersArray.some(p => p.peerId === cachedPeer.peerId);
-        if (!staysConnected) {
-		const call = peer.call(p.peerId, localStream);
-			console.log("DEBUG: Calling player:", p.name); // Check if this fires
-			call.on('error', (err) => console.log("DEBUG: Call Error:", err));
-            const deadBox = document.getElementById(`video-${cachedPeer.peerId}`);
-            if (deadBox) deadBox.remove();
-        }
-    });
-
-    currentActiveRoomArray = playersArray;
-
-    // 2. Call every player in the list
-    playersArray.forEach(p => {
-        // Ensure peer exists, isn't me, stream is ready, and we aren't already connected
-        if (p.peerId !== peerId && localStream && !document.getElementById(`video-${p.peerId}`)) {
-            
-            console.log(`Connecting to: ${p.name}`); 
-
-            const call = peer.call(p.peerId, localStream);
-            
-            call.on('error', (err) => console.error("PeerJS Error:", err));
-            call.on('stream', (remoteStream) => { 
-                addVideoFeed(remoteStream, p.peerId, p.name); 
+            socket.on('updatePlayerList', (playersArray) => {  // FIXED: Changed ssocket to socket
+            // 1. Remove video feeds for players who left
+            currentActiveRoomArray.forEach(cachedPeer => {
+                const staysConnected = playersArray.some(p => p.peerId === cachedPeer.peerId);
+                if (!staysConnected) {
+                    // FIXED: Removed the erroneous peer.call() logic that was attempting to call dead connections
+                    const deadBox = document.getElementById(`video-${cachedPeer.peerId}`);
+                    if (deadBox) deadBox.remove();
+                }
             });
-        }
-    });
-});
+            currentActiveRoomArray = playersArray;
+
+            // 2. Call every player in the list
+            playersArray.forEach(p => {
+                // Ensure peer exists, isn't me, stream is ready
+                if (p.peerId !== peerId && localStream) {
+                    const call = peer.call(p.peerId, localStream);
+                    console.log("DEBUG: Calling player:", p.name); 
+                    
+                    call.on('error', (err) => console.log("DEBUG: Call Error:", err));
+                    call.on('stream', (remoteStream) => {
+                        console.log("DEBUG: Received stream from:", call.peer);
+                        addVideoFeed(remoteStream, call.peer, "Player");
+                    });
+                }
+            });
+        });
 
             socket.on('syncMap', (mapSrc) => {
                 tableState.mapSrc = mapSrc;
@@ -1255,7 +1255,6 @@ async function importD85Module(file) {
     };
     reader.readAsArrayBuffer(file);
 }
-
     draw();
 </script>
 </body>
