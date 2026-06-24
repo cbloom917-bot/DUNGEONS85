@@ -509,10 +509,12 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
                 currentActiveRoomArray = playersArray;
                 playersArray.forEach(p => {
                     if (p.peerId !== peerId && localStream && !document.getElementById(`video-${p.peerId}`)) {
-                        if (peerId > p.peerId) {
-                            const call = peer.call(p.peerId, localStream);
-                            call.on('stream', (remoteStream) => { addVideoFeed(remoteStream, p.peerId, p.name); });
-                        }
+    // Attempt to call every peer that is not me
+    const call = peer.call(p.peerId, localStream);
+    call.on('stream', (remoteStream) => { 
+        addVideoFeed(remoteStream, p.peerId, p.name); 
+    });
+}
                     }
                 });
             });
