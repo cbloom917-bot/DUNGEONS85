@@ -165,9 +165,9 @@ io.on('connection', (socket) => {
                 state.wipeTimer = setTimeout(() => {
                     if (roomCampaignStates[currentRoom] && roomCampaignStates[currentRoom].players.length === 0) {
                         delete roomCampaignStates[currentRoom];
-                        console.log(`[SYS] Room ${currentRoom} wiped after 24 hours of inactivity.`);
+                        console.log(`[SYS] Room ${currentRoom} wiped after 20 minutes of inactivity.`);
                     }
-                }, 86400000); 
+                }, 1200000); // Changed to 20 minutes (1,200,000 milliseconds)
             } else {
                 io.to(currentRoom).emit('updatePlayerList', state.players);
             }
