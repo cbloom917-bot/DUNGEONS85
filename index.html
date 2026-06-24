@@ -498,27 +498,37 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             });
 
 
-            socket.on('updatePlayerList', (playersArray) => {
-                currentActiveRoomArray.forEach(cachedPeer => {
-                    const staysConnected = playersArray.some(p => p.peerId === cachedPeer.peerId);
-                    if (!staysConnected) {
-                        const deadBox = document.getElementById(`video-${cachedPeer.peerId}`);
-                        if (deadBox) deadBox.remove();
-                    }
-                });
-                currentActiveRoomArray = playersArray;
-                playersArray.forEach(p => {
-                    if (p.peerId !== peerId && localStream && !document.getElementById(`video-${p.peerId}`)) {
-    // Attempt to call every peer that is not me
-    const call = peer.call(p.peerId, localStream);
-    call.on('stream', (remoteStream) => { 
-        addVideoFeed(remoteStream, p.peerId, p.name); 
+            ssocket.on('updatePlayerList', (playersArray) => {
+    // 1. Remove video feeds for players who left
+    currentActiveRoomArray.forEach(cachedPeer => {
+        const staysConnected = playersArray.some(p => p.peerId === cachedPeer.peerId);
+        if (!staysConnected) {
+		const call = peer.call(p.peerId, localStream);
+			console.log("DEBUG: Calling player:", p.name); // Check if this fires
+			call.on('error', (err) => console.log("DEBUG: Call Error:", err));
+            const deadBox = document.getElementById(`video-${cachedPeer.peerId}`);
+            if (deadBox) deadBox.remove();
+        }
     });
-}
-                    }
-                });
-            });
 
+    currentActiveRoomArray = playersArray;
+
+    // 2. Call every player in the list
+    playersArray.forEach(p => {
+        // Ensure peer exists, isn't me, stream is ready, and we aren't already connected
+        if (p.peerId !== peerId && localStream && !document.getElementById(`video-${p.peerId}`)) {
+            
+            console.log(`Connecting to: ${p.name}`); 
+
+            const call = peer.call(p.peerId, localStream);
+            
+            call.on('error', (err) => console.error("PeerJS Error:", err));
+            call.on('stream', (remoteStream) => { 
+                addVideoFeed(remoteStream, p.peerId, p.name); 
+            });
+        }
+    });
+});
 
             socket.on('syncMap', (mapSrc) => {
                 tableState.mapSrc = mapSrc;
@@ -574,10 +584,11 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
         peer.on('call', (call) => {
-            call.answer(localStream);
-            call.on('stream', (remoteStream) => {
-                const identity = currentActiveRoomArray.find(p => p.peerId === call.peer);
-                addVideoFeed(remoteStream, call.peer, identity ? identity.name : "Player Connected");
+    console.log("DEBUG: Incoming call from:", call.peer); // Check if this fires
+    call.answer(localStream);
+    call.on('stream', (remoteStream) => {
+        console.log("DEBUG: Received stream from:", call.peer);
+        addVideoFeed(remoteStream, call.peer, "Player");
             });
         });
     }
