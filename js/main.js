@@ -3,7 +3,8 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     let isDrawingFoW = false, currentFoWPolygon = [], currentMouseWorldX = 0, currentMouseWorldY = 0;
     
     // ADDED: Declare contextSelectedToken globally
-    let contextSelectedToken = null; 
+    let contextSelectedToken = null;
+    let gmRoomMode = "create";
     
     const canvas = document.getElementById('vtt-canvas'), ctx = canvas.getContext('2d'), ctxMenu = document.getElementById('ctx-menu');
     const fogCanvas = document.createElement('canvas'), fogCtx = fogCanvas.getContext('2d');
@@ -62,17 +63,68 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
 }
 
     function setRoleSelection(isDMSelection) {
-        tableState.isDM = isDMSelection;
-        document.getElementById('role-dm').classList.toggle('active', isDMSelection);
-        document.getElementById('role-player').classList.toggle('active', !isDMSelection);
-    }
+    tableState.isDM = isDMSelection;
 
+    document.getElementById('role-dm').classList.toggle('active', isDMSelection);
+    document.getElementById('role-player').classList.toggle('active', !isDMSelection);
+
+    const gmRoomModeBox = document.getElementById('gm-room-mode');
+    const roomInput = document.getElementById('room-id-input');
+
+    if (isDMSelection) {
+        gmRoomModeBox.classList.remove('hidden');
+
+        const lastRoom = localStorage.getItem('d85LastRoomName');
+
+        if (lastRoom) {
+            gmRoomMode = "rejoin";
+            document.getElementById('gm-rejoin').innerText = `REJOIN ${lastRoom}`;
+            document.getElementById('gm-rejoin').classList.add('active');
+            document.getElementById('gm-create').classList.remove('active');
+            roomInput.value = lastRoom;
+        } else {
+            gmRoomMode = "create";
+            document.getElementById('gm-rejoin').innerText = "REJOIN LAST";
+            document.getElementById('gm-rejoin').classList.remove('active');
+            document.getElementById('gm-create').classList.add('active');
+            generateRandomRoomName(true);
+        }
+    } else {
+        gmRoomModeBox.classList.add('hidden');
+        roomInput.value = "";
+    }
+}
+
+window.setRoleSelection = setRoleSelection;
 window.generateRandomRoomName = generateRandomRoomName;
 window.setRoleSelection = setRoleSelection;
 
 window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('click', () => {
         ctxMenu.style.display = 'none';
+        const gmRejoinBtn = document.getElementById('gm-rejoin');
+const gmCreateBtn = document.getElementById('gm-create');
+
+if (gmRejoinBtn && gmCreateBtn) {
+    gmRejoinBtn.addEventListener('click', () => {
+        const lastRoom = localStorage.getItem('d85LastRoomName');
+        if (!lastRoom) return;
+
+        gmRoomMode = "rejoin";
+        document.getElementById('room-id-input').value = lastRoom;
+
+        gmRejoinBtn.classList.add('active');
+        gmCreateBtn.classList.remove('active');
+    });
+
+    gmCreateBtn.addEventListener('click', () => {
+        gmRoomMode = "create";
+        generateRandomRoomName(true);
+
+        gmCreateBtn.classList.add('active');
+        gmRejoinBtn.classList.remove('active');
+    });
+}
     });
 
     window.addEventListener('beforeunload', () => {
@@ -102,12 +154,18 @@ function resizeCanvas() {
     const nameInput = document.getElementById('char-name-input').value.trim();
     const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
     
+    if (tableState.isDM && gmRoomMode === "create") {
+    generateRandomRoomName(true);
+}
     if (!nameInput || !roomInput) {
         alert("Please enter both a Character Name and a Room Name.");
         return;
     }
     
     tableState.playerName = nameInput;
+        localStorage.setItem('d85LastRoomName', roomInput);
+        localStorage.setItem('d85LastPlayerName', nameInput);
+        localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
     
     try {
         // Must await camera access before proceeding
