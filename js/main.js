@@ -112,9 +112,8 @@ window.setRoleSelection = setRoleSelection;
     try {
         // Must await camera access before proceeding
         await setupCameraAndVideo();
-        
-        // Now proceed to init the PeerJS stack
-        initHybridMediaVttStack(roomInput, nameInput);
+        console.log("DEBUG: calling initHybridMediaVttStack");
+		initHybridMediaVttStack(roomInput, nameInput);
     } catch (e) {
         console.error("Failed to join: Camera setup failed.");
     }
