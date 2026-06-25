@@ -34,9 +34,14 @@
         <div class="login-wrap">
             <div class="login-title">CURRENTLY UNDER BETA TESTING 62501</div>
             <div class="toggle-container">
-                <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
-                <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
-            </div>
+    			<button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false);">PLAYER (JOIN)</button>
+    			<button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true);">GM (HOST)</button>
+			</div>
+
+			<div id="gm-room-mode" class="toggle-container hidden">
+    			<button type="button" id="gm-rejoin" class="toggle-btn">REJOIN LAST</button>
+    			<button type="button" id="gm-create" class="toggle-btn active">CREATE NEW</button>
+			</div>
             <input type="text" id="char-name-input" placeholder="Character Name" class="bw-input" maxlength="20">
             <input type="text" id="room-id-input" placeholder="Room Name" class="bw-input" maxlength="20">
             <button id="join-btn" class="bw-btn">CREATE/JOIN TABLE</button>
