@@ -152,6 +152,7 @@ window.setRoleSelection = setRoleSelection;
     }
 
 function initHybridMediaVttStack(roomName, playerName) {
+    console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
 
     if (socket) socket.disconnect();
 
@@ -165,15 +166,15 @@ function initHybridMediaVttStack(roomName, playerName) {
 
     peer = new Peer(undefined, webrtcIceConfig);
 
-    peer.on('disconnected', () => {
-        peer.reconnect();
-    });
-
     peer.on('open', (peerId) => {
+        console.log("DEBUG: PeerJS open", peerId);
 
         socket = io("https://newvtt.onrender.com", {
             transports: ["websocket"]
         });
+
+        socket.on('connect', () => {
+            console.log("DEBUG: Socket connected", socket.id);
 
         socket.on('joinError', (message) => {
             alert(message);
