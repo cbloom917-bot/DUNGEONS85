@@ -54,12 +54,21 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     const adjectives = ["Dark", "Iron", "Black", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Death", "Broken"];
     const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
 
-    function generateRandomRoomName() {
+function generateRandomRoomName() {
     const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
     const num = Math.floor(100 + Math.random() * 900);
     document.getElementById('room-id-input').value = `${adj}${noun}${num}`;
 }
+
+function setRoleSelection(isDMSelection) {
+    tableState.isDM = isDMSelection;
+    document.getElementById('role-dm').classList.toggle('active', isDMSelection);
+    document.getElementById('role-player').classList.toggle('active', !isDMSelection);
+}
+
+window.generateRandomRoomName = generateRandomRoomName;
+window.setRoleSelection = setRoleSelection;
 
     window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('click', () => {
