@@ -68,6 +68,7 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
 
     window.addEventListener('beforeunload', () => {
         if (socket) {
+    		socket.disconnect();
         }
 
         if (peer) {
