@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <base href="https://dungeons85.com/">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeons '85</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+
+<link rel="stylesheet" href="css/main.css">
+
+</head>
+
+<body>
+<div id="loading-overlay"><div class="spinner"></div><div id="loading-msg">RECONSTRUCTING DUNGEON...</div></div>
+
+<nav id="top-nav">
+    <a href="index.html" class="nav-link active">PLAY</a>
+    <a href="merch.html" class="nav-link">MERCH</a>
+    <a href="faq.html" class="nav-link">FAQ</a>
+    <a href="privacy.html" class="nav-link">PRIVACY</a>
+    <a href="tos.html" class="nav-link">TOS</a>
+    <a href="contact.html" class="nav-link">CONTACT</a>
+</nav>
+
+
+<div id="login-screen">
+    <div class="login-center-stack">
+        <div class="logo-container">
+            <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
+        </div>
+        <div class="login-wrap">
+            <div class="login-title"> Version 8.5</div>
+            <div class="toggle-container">
+                <button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false); document.getElementById('room-id-input').value = '';">PLAYER (JOIN)</button>
+                <button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true); generateRandomRoomName();">GM (HOST)</button>
+            </div>
+            <input type="text" id="char-name-input" placeholder="Character Name" class="bw-input" maxlength="20">
+            <input type="text" id="room-id-input" placeholder="Room Name" class="bw-input" maxlength="20">
+            <button id="join-btn" class="bw-btn">CREATE/JOIN TABLE</button>
+        </div>
+    </div>
+</div>
+
+
+<div id="vtt-interface" class="hidden">
+    <canvas id="vtt-canvas"></canvas>
+
+
+    <div id="ctx-menu">
+        <button class="ctx-item" onclick="executeContextReveal()">Reveal/Hide</button>
+        <button class="ctx-item" onclick="executeContextDuplicate()">Duplicate</button>
+        <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
+        <button class="ctx-item" onclick="executeContextResize(70)">Size: Med/Small (1x1)</button>
+        <button class="ctx-item" onclick="executeContextResize(140)">Size: Large (2x2)</button>
+        <button class="ctx-item" onclick="executeContextResize(210)">Size: Huge (3x3)</button>
+        <button class="ctx-item" onclick="executeContextResize(280)">Size: Gargantuan (4x4)</button>
+        <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
+        <button class="ctx-item" onclick="executeContextDelete()" style="color: #ff3333;">Dead</button>
+    </div>
+
+
+    <div class="toolbar" id="toolbar-left">
+        <div class="panel-label">:: Dice ::</div>
+        <div class="grid-dice">
+            <button onclick="rollDice(4)" class="tool-btn">D4</button>
+            <button onclick="rollDice(6)" class="tool-btn">D6</button>
+            <button onclick="rollDice(8)" class="tool-btn">D8</button>
+            <button onclick="rollDice(10)" class="tool-btn">D10</button>
+            <button onclick="rollDice(12)" class="tool-btn">D12</button>
+            <button onclick="rollDice(20)" class="tool-btn">D20</button>
+        </div>
+    </div>
+
+
+    <div class="toolbar" id="toolbar-right">
+        <div class="panel-label">:: Tools ::</div>
+        <button onclick="selectLocalFile('MAP')" class="tool-btn">Load Map</button>
+	    <button onclick="selectLocalFile('TOKEN')" class="tool-btn">Spawn Token</button>
+        <button onclick="toggleTorchPanel()" class="tool-btn">Torch Timer</button>
+        <button onclick="toggleTurnTracker()" class="tool-btn">Turn Tracker</button>
+        <button onclick="toggleFogPanel()" class="tool-btn">Fog of War</button>
+        <button onclick="forcePlayerFocus()" class="tool-btn">Focus View</button>
+
+
+        <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
+
+
+        <label class="tool-btn" style="cursor: pointer;">
+            Import .d85
+            <input type="file" accept=".d85" style="display: none;" onchange="importD85Module(this.files[0])">
+        </label>
+
+        <button onclick="exportTableState()" class="tool-btn">Export .d85</button>
+        <div style="font-size: 9px; text-align: center; text-transform: uppercase; color: #fff; background: #222; padding: 4px;" id="room-display">Room: ---</div>
+    </div>
+
+
+    <div class="toolbar hidden" id="fog-panel">
+        <div class="panel-label">:: Fog Of War ::</div>
+        <button onclick="toggleFogMode()" id="btn-fog-toggle" class="tool-btn">Enable Fog</button>
+        <button onclick="toggleFogDraw()" id="btn-fog-draw" class="tool-btn" style="display:none;">PLOT REVEAL</button>
+        <button onclick="resetFog()" id="btn-fog-reset" class="tool-btn" style="display:none; color: #ff3333;">Reset Fog</button>
+        <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
+            </div>
+
+
+    <div class="toolbar hidden" id="torch-panel">
+        <div class="panel-label">:: Torch ::</div>
+        <div class="torch-controls">
+            <div id="torch-light-btn" class="torch-status" onclick="igniteTorch()">LIGHT</div>
+            <div id="torch-clock">00:00</div>
+            <div id="torch-dark-status" class="torch-status active" onclick="torchSeconds = 0; extinguishTorch()">DARK</div>
+        </div>
+    </div>
+
+
+    <div class="toolbar hidden" id="turn-tracker-panel">
+        <div class="panel-label">:: Turn Tracker ::</div>
+        <div class="tracker-wrapper">
+            <div class="turn-col">
+                <div class="turn-lbl"></div>
+                <div class="turn-box" id="turn-box-1" onclick="checkTurn(1)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl">W</div>
+                <div class="turn-box" id="turn-box-2" onclick="checkTurn(2)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl"></div>
+                <div class="turn-box" id="turn-box-3" onclick="checkTurn(3)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl">W</div>
+                <div class="turn-box" id="turn-box-4" onclick="checkTurn(4)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl"></div>
+                <div class="turn-box" id="turn-box-5" onclick="checkTurn(5)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl">WR</div>
+                <div class="turn-box" id="turn-box-6" onclick="checkTurn(6)"></div>
+                <div style="position: absolute; right: -12px; bottom: 8px; font-size: 12px; font-weight: bold;">T</div>
+            </div>
+            <button class="turn-reset-btn" onclick="resetTurns()">&#x21BA;</button> 
+        </div>
+        <div id="turn-message"></div>
+    </div>
+
+
+    <div id="ticker-log" class="dice-history-ticker">
+        <div class="ticker-entry" id="ticker-empty-msg" style="color: #444; border: none;">[ Log Empty ]</div>
+    </div>
+
+
+    <div class="video-ribbon">
+        <div class="video-box" id="local-video-container">
+            <video id="local-video" autoplay muted playsinline></video>
+            <div id="local-name" class="video-label">You</div>
+            <div class="video-controls-overlay">
+                <button id="toggle-mic-btn" class="media-toggle-btn" onclick="toggleLocalAudio()">Mute</button>
+                <button id="toggle-cam-btn" class="media-toggle-btn" onclick="toggleLocalVideo()">Cam Off</button>
+            </div>
+        </div>
+        <div id="peer-videos-container" class="flex" style="gap: 0.5rem;"></div>
+    </div>
+</div>
+    
+ 
+    
+<script src="js/main.js"></script>
+</body>
+</html>
