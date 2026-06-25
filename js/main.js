@@ -435,7 +435,6 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
     });
-}
     
     function toggleFogPanel() {
         if (!tableState.isDM) return;
