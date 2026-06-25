@@ -421,7 +421,16 @@ function initHybridMediaVttStack(roomName, playerName) {
             darkness: tableState.isDarknessActive 
         });
     }
+    function broadcastFullTableState() {
+        if (!tableState.isDM || !socket) return;
 
+        if (tableState.mapSrc) {
+        socket.emit('updateMapImage', tableState.mapSrc);
+        }
+
+        broadcastTokensMatrixChange();
+        broadcastFoW();
+    }
 
     function toggleFogMode() {
         if (!tableState.isDM) return;
@@ -1032,26 +1041,51 @@ function exportTableState() {
 }
 
 async function importD85Module(file) {
-    document.getElementById('loading-overlay').style.display = 'flex'; // Show spinner
+    if (!file) return;
+
+    document.getElementById('loading-overlay').style.display = 'flex';
+
     const reader = new FileReader();
+
     reader.onload = async (e) => {
         try {
-            const decompressed = pako.inflate(new Uint8Array(e.target.result), { to: 'string' });
+            const decompressed = pako.inflate(
+                new Uint8Array(e.target.result),
+                { to: 'string' }
+            );
+
             tableState = JSON.parse(decompressed);
 
-// Load all images before drawing
-const imagePromises = [];
+            const imagePromises = [];
 
-if (tableState.mapSrc) {
-    imagePromises.push(loadCloudImage(tableState.mapSrc));
-}
+            if (tableState.mapSrc) {
+                imagePromises.push(loadCloudImage(tableState.mapSrc));
+            }
 
-if (Array.isArray(tableState.tokens)) {
-    tableState.tokens.forEach(token => {
-        if (token.src) {
-            imagePromises.push(loadCloudImage(token.src));
+            if (Array.isArray(tableState.tokens)) {
+                tableState.tokens.forEach(token => {
+                    if (token.src) {
+                        imagePromises.push(loadCloudImage(token.src));
+                    }
+                });
+            }
+
+            await Promise.all(imagePromises);
+
+            broadcastFullTableState();
+
+            draw();
+
+            alert(".d85 File loaded successfully!");
+        } catch (err) {
+            console.error("D85 Import Error:", err);
+            alert("Invalid .d85 file.");
+        } finally {
+            document.getElementById('loading-overlay').style.display = 'none';
         }
-    });
+    };
+
+    reader.readAsArrayBuffer(file);
 }
 
 await Promise.all(imagePromises);
