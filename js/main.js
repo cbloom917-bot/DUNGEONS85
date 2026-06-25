@@ -54,30 +54,30 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     const adjectives = ["Dark", "Iron", "Black", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Death", "Broken"];
     const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
 
-function generateRandomRoomName() {
+    function generateRandomRoomName() {
     const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
     const num = Math.floor(100 + Math.random() * 900);
     document.getElementById('room-id-input').value = `${adj}${noun}${num}`;
 }
 
-function setRoleSelection(isDMSelection) {
-    tableState.isDM = isDMSelection;
-    document.getElementById('role-dm').classList.toggle('active', isDMSelection);
-    document.getElementById('role-player').classList.toggle('active', !isDMSelection);
-}
+    function setRoleSelection(isDMSelection) {
+        tableState.isDM = isDMSelection;
+        document.getElementById('role-dm').classList.toggle('active', isDMSelection);
+        document.getElementById('role-player').classList.toggle('active', !isDMSelection);
+    }
 
 window.generateRandomRoomName = generateRandomRoomName;
 window.setRoleSelection = setRoleSelection;
 
-    window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('click', () => {
         ctxMenu.style.display = 'none';
     });
 
     window.addEventListener('beforeunload', () => {
         if (socket) {
-    		socket.disconnect();
+            socket.disconnect();
         }
 
         if (peer) {
@@ -85,8 +85,8 @@ window.setRoleSelection = setRoleSelection;
         }
     });
 });
-			
-    function resizeCanvas() {
+
+function resizeCanvas() {
         canvas.width = canvas.clientWidth; 
         canvas.height = canvas.clientHeight; 
 
@@ -112,8 +112,9 @@ window.setRoleSelection = setRoleSelection;
     try {
         // Must await camera access before proceeding
         await setupCameraAndVideo();
-        console.log("DEBUG: calling initHybridMediaVttStack");
-		initHybridMediaVttStack(roomInput, nameInput);
+        
+        // Now proceed to init the PeerJS stack
+        initHybridMediaVttStack(roomInput, nameInput);
     } catch (e) {
         console.error("Failed to join: Camera setup failed.");
     }
@@ -150,10 +151,19 @@ window.setRoleSelection = setRoleSelection;
         }
     }
 
+
 function initHybridMediaVttStack(roomName, playerName) {
     console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
 
-    if (socket) socket.disconnect();
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+
+    if (peer) {
+        peer.destroy();
+        peer = null;
+    }
 
     const webrtcIceConfig = {
         config: {
@@ -165,6 +175,15 @@ function initHybridMediaVttStack(roomName, playerName) {
 
     peer = new Peer(undefined, webrtcIceConfig);
 
+    peer.on('disconnected', () => {
+        console.log("DEBUG: PeerJS disconnected; attempting reconnect");
+        peer.reconnect();
+    });
+
+    peer.on('error', (err) => {
+        console.error("DEBUG: PeerJS error:", err);
+    });
+
     peer.on('open', (peerId) => {
         console.log("DEBUG: PeerJS open", peerId);
 
@@ -175,45 +194,16 @@ function initHybridMediaVttStack(roomName, playerName) {
         socket.on('connect', () => {
             console.log("DEBUG: Socket connected", socket.id);
 
-        socket.on('joinError', (message) => {
-            alert(message);
-            window.location.reload();
-        });
+            document.getElementById('room-display').innerText = `Room: ${roomName}`;
+            document.getElementById('top-nav').classList.add('hidden');
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('vtt-interface').classList.remove('hidden');
 
-        socket.on('connect', () => {
-
-            document.getElementById('room-display').innerText =
-                `Room: ${roomName}`;
-
-            document.getElementById('top-nav')
-                .classList.add('hidden');
-
-            document.getElementById('login-screen')
-                .classList.add('hidden');
-
-            document.getElementById('vtt-interface')
-                .classList.remove('hidden');
-
-            const emptyMsg =
-                document.getElementById('ticker-empty-msg');
-
+            const emptyMsg = document.getElementById('ticker-empty-msg');
             if (emptyMsg) emptyMsg.remove();
 
-            setTimeout(() => {
-
-                const entryMessage =
-                    tableState.isDM
-                        ? `${tableState.playerName} HAS CREATED THE TABLE`
-                        : `${tableState.playerName} HAS JOINED THE TABLE`;
-
-                socket.emit('playerNotification', entryMessage);
-
-            }, 500);
-
             if (!tableState.isDM) {
-                const dmToolbar =
-                    document.getElementById('toolbar-right');
-
+                const dmToolbar = document.getElementById('toolbar-right');
                 if (dmToolbar) dmToolbar.remove();
             }
 
@@ -228,66 +218,50 @@ function initHybridMediaVttStack(roomName, playerName) {
                 isDM: tableState.isDM,
                 peerId
             });
+
+            setTimeout(() => {
+                const entryMessage = tableState.isDM
+                    ? `${tableState.playerName} HAS CREATED THE TABLE`
+                    : `${tableState.playerName} HAS JOINED THE TABLE`;
+
+                socket.emit('playerNotification', entryMessage);
+            }, 500);
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error("DEBUG: Socket connection error:", err);
+        });
+
+        socket.on('joinError', (message) => {
+            alert(message);
+            window.location.reload();
         });
 
         socket.on('updatePlayerList', (playersArray) => {
+            console.log("DEBUG: updatePlayerList", playersArray);
 
-            const previousPlayers = [...currentActiveRoomArray];
+            const previousPlayers = currentActiveRoomArray || [];
 
             previousPlayers.forEach(oldPlayer => {
-
-                const stillConnected =
-                    playersArray.some(
-                        p => p.peerId === oldPlayer.peerId
-                    );
-
+                const stillConnected = playersArray.some(p => p.peerId === oldPlayer.peerId);
                 if (!stillConnected) {
-
-                    const deadBox =
-                        document.getElementById(
-                            `video-${oldPlayer.peerId}`
-                        );
-
+                    const deadBox = document.getElementById(`video-${oldPlayer.peerId}`);
                     if (deadBox) deadBox.remove();
                 }
             });
 
             playersArray.forEach(p => {
+                const wasKnown = previousPlayers.some(existing => existing.peerId === p.peerId);
 
-                const wasKnown =
-                    currentActiveRoomArray.some(
-                        existing =>
-                            existing.peerId === p.peerId
-                    );
-
-                if (
-                    p.peerId !== peerId &&
-                    !wasKnown
-                ) {
-
-                    const call =
-                        peer.call(
-                            p.peerId,
-                            localStream
-                        );
+                if (p.peerId !== peerId && !wasKnown && localStream) {
+                    const call = peer.call(p.peerId, localStream);
 
                     call.on('stream', (remoteStream) => {
-
-                        if (!p.isDM) {
-
-                            addVideoFeed(
-                                remoteStream,
-                                call.peer,
-                                p.name
-                            );
-                        }
+                        addVideoFeed(remoteStream, call.peer, p.name);
                     });
 
                     call.on('error', (err) => {
-                        console.error(
-                            "Peer call error:",
-                            err
-                        );
+                        console.error("DEBUG: Outgoing PeerJS call error:", err);
                     });
                 }
             });
@@ -296,82 +270,47 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         peer.on('call', (call) => {
+            console.log("DEBUG: Incoming PeerJS call from", call.peer);
 
-            console.log(
-                "Incoming call from:",
-                call.peer
-            );
+            if (!localStream) {
+                console.warn("DEBUG: No local stream available to answer call");
+                return;
+            }
 
             call.answer(localStream);
 
             call.on('stream', (remoteStream) => {
-
-                const caller =
-                    currentActiveRoomArray.find(
-                        p => p.peerId === call.peer
-                    );
-
-                const displayName =
-                    caller
-                        ? caller.name
-                        : "Player";
-
-                if (!caller || !caller.isDM) {
-
-                    addVideoFeed(
-                        remoteStream,
-                        call.peer,
-                        displayName
-                    );
-                }
+                const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
+                const displayName = caller ? caller.name : "Player";
+                addVideoFeed(remoteStream, call.peer, displayName);
             });
 
             call.on('error', (err) => {
-                console.error(
-                    "Incoming call error:",
-                    err
-                );
+                console.error("DEBUG: Incoming PeerJS call error:", err);
             });
         });
 
         socket.on('syncMap', (mapSrc) => {
-
             tableState.mapSrc = mapSrc;
-
-            loadCloudImage(mapSrc)
-                .then(() => draw());
+            loadCloudImage(mapSrc).then(() => draw());
         });
 
         socket.on('syncTokens', (incomingTokens) => {
-
             tableState.tokens = incomingTokens;
-
-            incomingTokens.forEach(t => {
-                loadCloudImage(t.src)
-                    .then(() => draw());
-            });
-
+            incomingTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
             draw();
         });
 
         socket.on('tokenMoved', (data) => {
-
-            const match =
-                tableState.tokens.find(
-                    t => t.id === data.id
-                );
-
+            const match = tableState.tokens.find(t => t.id === data.id);
             if (match) {
-
                 match.x = data.x;
                 match.y = data.y;
-
                 draw();
             }
         });
 
         socket.on('diceRolledAnimation', (data) => {
-
             executeDiceOverlayAnimation(
                 data.sides,
                 data.result,
@@ -382,60 +321,34 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('playerNotification', (msg) => {
-
-            addResultToHistoryTicker(
-                "[SYS]",
-                0,
-                msg
-            );
+            addResultToHistoryTicker("[SYS]", 0, msg);
         });
 
         socket.on('syncCamera', (cameraData) => {
-
             if (tableState.isDM) return;
 
-            tableState.camera.x =
-                cameraData.x;
-
-            tableState.camera.y =
-                cameraData.y;
-
-            tableState.camera.zoom =
-                cameraData.zoom;
+            tableState.camera.x = cameraData.x;
+            tableState.camera.y = cameraData.y;
+            tableState.camera.zoom = cameraData.zoom;
 
             draw();
-
-            addResultToHistoryTicker(
-                "[SYS]",
-                0,
-                "VIEW FOCUSED BY GM"
-            );
+            addResultToHistoryTicker("[SYS]", 0, "VIEW FOCUSED BY GM");
         });
 
         socket.on('syncFoW', (fowData) => {
+            tableState.fowEnabled = fowData.enabled;
+            tableState.fowPolygons = fowData.polygons;
 
-            tableState.fowEnabled =
-                fowData.enabled;
-
-            tableState.fowPolygons =
-                fowData.polygons;
-
-            if (
-                fowData.darkness !== undefined
-            ) {
-                tableState.isDarknessActive =
-                    fowData.darkness;
+            if (fowData.darkness !== undefined) {
+                tableState.isDarknessActive = fowData.darkness;
             }
 
-            if (tableState.isDM) {
-                updateFogUI();
-            }
-
+            if (tableState.isDM) updateFogUI();
             draw();
         });
-
     });
-    
+}
+
     function toggleFogPanel() {
         if (!tableState.isDM) return;
         document.getElementById('fog-panel').classList.toggle('hidden');
@@ -573,21 +486,6 @@ function initHybridMediaVttStack(roomName, playerName) {
     }
 
 
-    function exportTableState() {
-        const stateExport = { 
-            savedMapSrc: tableState.mapSrc, 
-            tokens: tableState.tokens,
-            fowEnabled: tableState.fowEnabled,
-            fowPolygons: tableState.fowPolygons,
-            isDarknessActive: tableState.isDarknessActive
-        };
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateExport));
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.setAttribute("href", dataStr); downloadAnchor.setAttribute("download", "vtt-table-state.json");
-        document.body.appendChild(downloadAnchor); downloadAnchor.click(); downloadAnchor.remove();
-    }
-
-
     let isDraggingWorkspace = false;
     let dragStart = { x: 0, y: 0 };
     let selectedToken = null;
@@ -686,14 +584,8 @@ function initHybridMediaVttStack(roomName, playerName) {
         if (selectedToken) {
             selectedToken.x += dx;
             selectedToken.y += dy;
-		if (socket) {
-  	  		socket.emit('tokenMove', {
-        		id: selectedToken.id,
-        		x: selectedToken.x,
-        		y: selectedToken.y
-    		});
-		}        
-		} else if (isDraggingWorkspace) {
+            if (socket) { socket.emit('tokenMove', { id: selectedToken.id, x: selectedToken.x, y: selectedToken.y }); }
+        } else if (isDraggingWorkspace) {
             tableState.camera.x += (mouseX - dragStart.x);
             tableState.camera.y += (mouseY - dragStart.y);
         }
@@ -703,8 +595,8 @@ function initHybridMediaVttStack(roomName, playerName) {
 
 
     window.addEventListener('mouseup', () => {
-		if (selectedToken) broadcastTokensMatrixChange();
-		isDraggingWorkspace = false; selectedToken = null;
+        if (selectedToken) broadcastTokensMatrixChange();
+        isDraggingWorkspace = false; selectedToken = null;
     });
 
 
@@ -1088,15 +980,8 @@ async function importD85Module(file) {
         try {
             const decompressed = pako.inflate(new Uint8Array(e.target.result), { to: 'string' });
             tableState = JSON.parse(decompressed);
-			if (tableState.mapSrc && socket) {
-    		socket.emit('updateMapImage', tableState.mapSrc);
-			}
-
-			if (socket) {
-   				broadcastTokensMatrixChange();
-    			broadcastFoW();
-			}
-			
+            if (tableState.mapSrc && socket) socket.emit('updateMapImage', tableState.mapSrc);
+            if (socket) { broadcastTokensMatrixChange(); broadcastFoW(); }
             if (typeof draw === 'function') draw();
             alert(".d85 File loaded successfully!");
         } catch (err) {
