@@ -61,20 +61,20 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     document.getElementById('room-id-input').value = `${adj}${noun}${num}`;
 }
 
-    function setRoleSelection(isDMSelection) {
-        tableState.isDM = isDMSelection;
-        document.getElementById('role-dm').classList.toggle('active', isDMSelection);
-        document.getElementById('role-player').classList.toggle('active', !isDMSelection);
-    }
+    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('click', () => {
+        ctxMenu.style.display = 'none';
+    });
 
-        window.addEventListener('DOMContentLoaded', () => {
-        window.addEventListener('click', () => { ctxMenu.style.display = 'none'; });
-        window.addEventListener('beforeunload', () => { 
-			if (socket) { 
-				socket.emit('disconnect');
-				socket.disconnect(); 
-			}
-		});
+    window.addEventListener('beforeunload', () => {
+        if (socket) {
+        }
+
+        if (peer) {
+            peer.destroy();
+        }
+    });
+});
 			
     function resizeCanvas() {
         canvas.width = canvas.clientWidth; 
@@ -141,160 +141,292 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
         }
     }
 
+function initHybridMediaVttStack(roomName, playerName) {
 
-    function initHybridMediaVttStack(roomName, playerName) {
-        if (socket) socket.disconnect();
+    if (socket) socket.disconnect();
 
+    const webrtcIceConfig = {
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        }
+    };
 
-        const webrtcIceConfig = { config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] } };
-        peer = new Peer(undefined, webrtcIceConfig);
-        peer.on('disconnected', () => { peer.reconnect(); });
-        peer.on('open', (peerId) => {
-            socket = io("https://newvtt.onrender.com", { transports: ["websocket"] });
+    peer = new Peer(undefined, webrtcIceConfig);
 
+    peer.on('disconnected', () => {
+        peer.reconnect();
+    });
 
-            socket.on('joinError', (message) => {
-                alert(message);
-                window.location.reload(); 
-            });
+    peer.on('open', (peerId) => {
 
+        socket = io("https://newvtt.onrender.com", {
+            transports: ["websocket"]
+        });
 
-            socket.on('connect', () => {
-                document.getElementById('room-display').innerText = `Room: ${roomName}`;
-                document.getElementById('top-nav').classList.add('hidden'); 
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('vtt-interface').classList.remove('hidden');
+        socket.on('joinError', (message) => {
+            alert(message);
+            window.location.reload();
+        });
 
+        socket.on('connect', () => {
 
-                const emptyMsg = document.getElementById('ticker-empty-msg');
-                if (emptyMsg) emptyMsg.remove();
+            document.getElementById('room-display').innerText =
+                `Room: ${roomName}`;
 
+            document.getElementById('top-nav')
+                .classList.add('hidden');
 
-                setTimeout(() => {
-                    const entryMessage = tableState.isDM 
-                        ? `${tableState.playerName} HAS CREATED THE TABLE` 
+            document.getElementById('login-screen')
+                .classList.add('hidden');
+
+            document.getElementById('vtt-interface')
+                .classList.remove('hidden');
+
+            const emptyMsg =
+                document.getElementById('ticker-empty-msg');
+
+            if (emptyMsg) emptyMsg.remove();
+
+            setTimeout(() => {
+
+                const entryMessage =
+                    tableState.isDM
+                        ? `${tableState.playerName} HAS CREATED THE TABLE`
                         : `${tableState.playerName} HAS JOINED THE TABLE`;
 
+                socket.emit('playerNotification', entryMessage);
 
-                    socket.emit('playerNotification', entryMessage);
-                }, 500);
+            }, 500);
 
+            if (!tableState.isDM) {
+                const dmToolbar =
+                    document.getElementById('toolbar-right');
 
-               if (!tableState.isDM) {
-                    const dmToolbar = document.getElementById('toolbar-right');
-                    if (dmToolbar) dmToolbar.remove();
-                }
+                if (dmToolbar) dmToolbar.remove();
+            }
 
+            setTimeout(() => {
+                resizeCanvas();
+                makeElementsDraggable();
+            }, 50);
 
-                setTimeout(() => {
-                    resizeCanvas();
-                    makeElementsDraggable();
-                }, 50);
-
-
-                socket.emit('joinRoom', { roomName, playerName, isDM: tableState.isDM, peerId });
+            socket.emit('joinRoom', {
+                roomName,
+                playerName,
+                isDM: tableState.isDM,
+                peerId
             });
+        });
 
+        socket.on('updatePlayerList', (playersArray) => {
 
-            socket.on('updatePlayerList', (playersArray) => {  // FIXED: Changed ssocket to socket
-            // 1. Remove video feeds for players who left
-            currentActiveRoomArray.forEach(cachedPeer => {
-                const staysConnected = playersArray.some(p => p.peerId === cachedPeer.peerId);
-                if (!staysConnected) {
-                    // FIXED: Removed the erroneous peer.call() logic that was attempting to call dead connections
-                    const deadBox = document.getElementById(`video-${cachedPeer.peerId}`);
+            const previousPlayers = [...currentActiveRoomArray];
+
+            previousPlayers.forEach(oldPlayer => {
+
+                const stillConnected =
+                    playersArray.some(
+                        p => p.peerId === oldPlayer.peerId
+                    );
+
+                if (!stillConnected) {
+
+                    const deadBox =
+                        document.getElementById(
+                            `video-${oldPlayer.peerId}`
+                        );
+
                     if (deadBox) deadBox.remove();
                 }
             });
-            currentActiveRoomArray = playersArray;
 
-            // 2. Call every player in the list
-			playersArray.forEach(p => {
-    // ADDED: Check if p.isDM exists and is true, skip calling if it is
-    		playersArray.forEach(p => {
-        if (p.peerId !== peerId && !currentActiveRoomArray.find(c => c.peerId === p.peerId)) {
-            // This is a new player; the host MUST call them
-            const call = peer.call(p.peerId, localStream);
-            call.on('stream', (remoteStream) => {
-                addVideoFeed(remoteStream, call.peer, p.name); 
-        
-       		 call.on('error', (err) => console.log("DEBUG: Call Error:", err));
-       		 call.on('stream', (remoteStream) => {
-            // Pass the player's name found in the array
-            addVideoFeed(remoteStream, call.peer, p.name);
-        	});
+            playersArray.forEach(p => {
 
-            socket.on('syncMap', (mapSrc) => {
-                tableState.mapSrc = mapSrc;
-                loadCloudImage(mapSrc).then(() => draw());
-            });
+                const wasKnown =
+                    currentActiveRoomArray.some(
+                        existing =>
+                            existing.peerId === p.peerId
+                    );
 
+                if (
+                    p.peerId !== peerId &&
+                    !wasKnown
+                ) {
 
-            socket.on('syncTokens', (incomingTokens) => {
-                tableState.tokens = incomingTokens; 
-                incomingTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
-                draw();
-            });
+                    const call =
+                        peer.call(
+                            p.peerId,
+                            localStream
+                        );
 
+                    call.on('stream', (remoteStream) => {
 
-            socket.on('tokenMoved', (data) => {
-                const match = tableState.tokens.find(t => t.id === data.id);
-                if (match) { match.x = data.x; match.y = data.y; draw(); }
-            });
+                        if (!p.isDM) {
 
+                            addVideoFeed(
+                                remoteStream,
+                                call.peer,
+                                p.name
+                            );
+                        }
+                    });
 
-            socket.on('diceRolledAnimation', (data) => {
-                executeDiceOverlayAnimation(data.sides, data.result, data.player, data.screenX, data.screenY);
-            });
-
-
-            socket.on('playerNotification', (msg) => { 
-                addResultToHistoryTicker("[SYS]", 0, msg); 
-            });
-
-
-            socket.on('syncCamera', (cameraData) => {
-                if (tableState.isDM) return; 
-                tableState.camera.x = cameraData.x;
-                tableState.camera.y = cameraData.y;
-                tableState.camera.zoom = cameraData.zoom;
-                draw();
-                addResultToHistoryTicker("[SYS]", 0, "VIEW FOCUSED BY GM");
-            });
-
-
-            socket.on('syncFoW', (fowData) => {
-                tableState.fowEnabled = fowData.enabled;
-                tableState.fowPolygons = fowData.polygons;
-                if (fowData.darkness !== undefined) {
-                    tableState.isDarknessActive = fowData.darkness;
+                    call.on('error', (err) => {
+                        console.error(
+                            "Peer call error:",
+                            err
+                        );
+                    });
                 }
-                if (tableState.isDM) updateFogUI();
-                draw();
             });
 
-
-        }); 
-
+            currentActiveRoomArray = playersArray;
+        });
 
         peer.on('call', (call) => {
-   	 		console.log("DEBUG: Incoming call from Host:", call.peer);
-			call.answer(localStream);
-			
-			call.on('stream', (remoteStream) => {
-        // Find the player's name from the current list using the peerId
-        		const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
-        		const displayName = caller ? caller.name : "Player";
-        
-        // Only show if the caller is not the DM
-        if (caller && !caller.isDM) {
-            addVideoFeed(remoteStream, call.peer, displayName);
-        }
+
+            console.log(
+                "Incoming call from:",
+                call.peer
+            );
+
+            call.answer(localStream);
+
+            call.on('stream', (remoteStream) => {
+
+                const caller =
+                    currentActiveRoomArray.find(
+                        p => p.peerId === call.peer
+                    );
+
+                const displayName =
+                    caller
+                        ? caller.name
+                        : "Player";
+
+                if (!caller || !caller.isDM) {
+
+                    addVideoFeed(
+                        remoteStream,
+                        call.peer,
+                        displayName
+                    );
+                }
+            });
+
+            call.on('error', (err) => {
+                console.error(
+                    "Incoming call error:",
+                    err
+                );
+            });
+        });
+
+        socket.on('syncMap', (mapSrc) => {
+
+            tableState.mapSrc = mapSrc;
+
+            loadCloudImage(mapSrc)
+                .then(() => draw());
+        });
+
+        socket.on('syncTokens', (incomingTokens) => {
+
+            tableState.tokens = incomingTokens;
+
+            incomingTokens.forEach(t => {
+                loadCloudImage(t.src)
+                    .then(() => draw());
+            });
+
+            draw();
+        });
+
+        socket.on('tokenMoved', (data) => {
+
+            const match =
+                tableState.tokens.find(
+                    t => t.id === data.id
+                );
+
+            if (match) {
+
+                match.x = data.x;
+                match.y = data.y;
+
+                draw();
+            }
+        });
+
+        socket.on('diceRolledAnimation', (data) => {
+
+            executeDiceOverlayAnimation(
+                data.sides,
+                data.result,
+                data.player,
+                data.screenX,
+                data.screenY
+            );
+        });
+
+        socket.on('playerNotification', (msg) => {
+
+            addResultToHistoryTicker(
+                "[SYS]",
+                0,
+                msg
+            );
+        });
+
+        socket.on('syncCamera', (cameraData) => {
+
+            if (tableState.isDM) return;
+
+            tableState.camera.x =
+                cameraData.x;
+
+            tableState.camera.y =
+                cameraData.y;
+
+            tableState.camera.zoom =
+                cameraData.zoom;
+
+            draw();
+
+            addResultToHistoryTicker(
+                "[SYS]",
+                0,
+                "VIEW FOCUSED BY GM"
+            );
+        });
+
+        socket.on('syncFoW', (fowData) => {
+
+            tableState.fowEnabled =
+                fowData.enabled;
+
+            tableState.fowPolygons =
+                fowData.polygons;
+
+            if (
+                fowData.darkness !== undefined
+            ) {
+                tableState.isDarknessActive =
+                    fowData.darkness;
+            }
+
+            if (tableState.isDM) {
+                updateFogUI();
+            }
+
+            draw();
+        });
+
     });
-});
-    }
-
-
+}
+    
     function toggleFogPanel() {
         if (!tableState.isDM) return;
         document.getElementById('fog-panel').classList.toggle('hidden');
@@ -545,8 +677,14 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
         if (selectedToken) {
             selectedToken.x += dx;
             selectedToken.y += dy;
-            socket.emit('tokenMove', { id: selectedToken.id, x: selectedToken.x, y: selectedToken.y });
-        } else if (isDraggingWorkspace) {
+		if (socket) {
+  	  		socket.emit('tokenMove', {
+        		id: selectedToken.id,
+        		x: selectedToken.x,
+        		y: selectedToken.y
+    		});
+		}        
+		} else if (isDraggingWorkspace) {
             tableState.camera.x += (mouseX - dragStart.x);
             tableState.camera.y += (mouseY - dragStart.y);
         }
@@ -556,8 +694,8 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
 
 
     window.addEventListener('mouseup', () => {
-        if (isDraggingWorkspace && selectedToken) broadcastTokensMatrixChange();
-        isDraggingWorkspace = false; selectedToken = null;
+		if (selectedToken) broadcastTokensMatrixChange();
+		isDraggingWorkspace = false; selectedToken = null;
     });
 
 
@@ -941,6 +1079,15 @@ async function importD85Module(file) {
         try {
             const decompressed = pako.inflate(new Uint8Array(e.target.result), { to: 'string' });
             tableState = JSON.parse(decompressed);
+			if (tableState.mapSrc && socket) {
+    		socket.emit('updateMapImage', tableState.mapSrc);
+			}
+
+			if (socket) {
+   				broadcastTokensMatrixChange();
+    			broadcastFoW();
+			}
+			
             if (typeof draw === 'function') draw();
             alert(".d85 File loaded successfully!");
         } catch (err) {
