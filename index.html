@@ -388,9 +388,13 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
         window.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('click', () => { ctxMenu.style.display = 'none'; });
-        window.addEventListener('beforeunload', () => { if (socket) { socket.emit('disconnect'); socket.disconnect(); } });
-    });
-
+        window.addEventListener('beforeunload', () => { 
+			if (socket) { 
+				socket.emit('disconnect');
+				socket.disconnect(); 
+			}
+		});
+			
     function resizeCanvas() {
         canvas.width = canvas.clientWidth; 
         canvas.height = canvas.clientHeight; 
