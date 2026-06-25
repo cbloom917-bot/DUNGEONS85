@@ -526,9 +526,12 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             // 2. Call every player in the list
 			playersArray.forEach(p => {
     // ADDED: Check if p.isDM exists and is true, skip calling if it is
-    		if (p.peerId !== peerId && localStream && !p.isDM) {
-      	  	const call = peer.call(p.peerId, localStream);
-        	console.log("DEBUG: Calling player:", p.name); 
+    		playersArray.forEach(p => {
+        if (p.peerId !== peerId && !currentActiveRoomArray.find(c => c.peerId === p.peerId)) {
+            // This is a new player; the host MUST call them
+            const call = peer.call(p.peerId, localStream);
+            call.on('stream', (remoteStream) => {
+                addVideoFeed(remoteStream, call.peer, p.name); 
         
        		 call.on('error', (err) => console.log("DEBUG: Call Error:", err));
        		 call.on('stream', (remoteStream) => {
@@ -593,11 +596,13 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
         peer.on('call', (call) => {
-    call.answer(localStream);
-    call.on('stream', (remoteStream) => {
+   	 		console.log("DEBUG: Incoming call from Host:", call.peer);
+			call.answer(localStream);
+			
+			call.on('stream', (remoteStream) => {
         // Find the player's name from the current list using the peerId
-        const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
-        const displayName = caller ? caller.name : "Player";
+        		const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
+        		const displayName = caller ? caller.name : "Player";
         
         // Only show if the caller is not the DM
         if (caller && !caller.isDM) {
