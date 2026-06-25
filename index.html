@@ -515,19 +515,19 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
             currentActiveRoomArray = playersArray;
 
             // 2. Call every player in the list
-            playersArray.forEach(p => {
-                // Ensure peer exists, isn't me, stream is ready
-                if (p.peerId !== peerId && localStream) {
-                    const call = peer.call(p.peerId, localStream);
-                    console.log("DEBUG: Calling player:", p.name); 
-                    
-                    call.on('error', (err) => console.log("DEBUG: Call Error:", err));
-                    call.on('stream', (remoteStream) => {
-                        console.log("DEBUG: Received stream from:", call.peer);
-                        addVideoFeed(remoteStream, call.peer, "Player");
-                    });
-                }
-            });
+			playersArray.forEach(p => {
+    // ADDED: Check if p.isDM exists and is true, skip calling if it is
+    		if (p.peerId !== peerId && localStream && !p.isDM) {
+      	  	const call = peer.call(p.peerId, localStream);
+        	console.log("DEBUG: Calling player:", p.name); 
+        
+       		 call.on('error', (err) => console.log("DEBUG: Call Error:", err));
+       		 call.on('stream', (remoteStream) => {
+            // Pass the player's name found in the array
+            addVideoFeed(remoteStream, call.peer, p.name);
+        });
+    }
+});
         });
 
             socket.on('syncMap', (mapSrc) => {
@@ -584,13 +584,18 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
         peer.on('call', (call) => {
-    console.log("DEBUG: Incoming call from:", call.peer); // Check if this fires
     call.answer(localStream);
     call.on('stream', (remoteStream) => {
-        console.log("DEBUG: Received stream from:", call.peer);
-        addVideoFeed(remoteStream, call.peer, "Player");
-            });
-        });
+        // Find the player's name from the current list using the peerId
+        const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
+        const displayName = caller ? caller.name : "Player";
+        
+        // Only show if the caller is not the DM
+        if (caller && !caller.isDM) {
+            addVideoFeed(remoteStream, call.peer, displayName);
+        }
+    });
+});
     }
 
 
