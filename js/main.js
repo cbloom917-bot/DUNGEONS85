@@ -1038,10 +1038,38 @@ async function importD85Module(file) {
         try {
             const decompressed = pako.inflate(new Uint8Array(e.target.result), { to: 'string' });
             tableState = JSON.parse(decompressed);
-            if (tableState.mapSrc && socket) socket.emit('updateMapImage', tableState.mapSrc);
-            if (socket) { broadcastTokensMatrixChange(); broadcastFoW(); }
-            if (typeof draw === 'function') draw();
-            alert(".d85 File loaded successfully!");
+
+// Load all images before drawing
+const imagePromises = [];
+
+if (tableState.mapSrc) {
+    imagePromises.push(loadCloudImage(tableState.mapSrc));
+}
+
+if (Array.isArray(tableState.tokens)) {
+    tableState.tokens.forEach(token => {
+        if (token.src) {
+            imagePromises.push(loadCloudImage(token.src));
+        }
+    });
+}
+
+await Promise.all(imagePromises);
+
+// Sync everyone else if we're the DM
+if (socket && tableState.isDM) {
+    if (tableState.mapSrc) {
+        socket.emit('updateMapImage', tableState.mapSrc);
+    }
+
+    broadcastTokensMatrixChange();
+    broadcastFoW();
+}
+
+// Now redraw after everything is loaded
+draw();
+
+alert(".d85 File loaded successfully!");
         } catch (err) {
             alert("Invalid .d85 file.");
         } finally {
