@@ -403,18 +403,27 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     window.addEventListener('resize', resizeCanvas);
 
 
-    document.getElementById('join-btn').addEventListener('click', () => {
-        const nameInput = document.getElementById('char-name-input').value.trim();
-        const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
-        if (!nameInput || !roomInput) {
-            alert("Please enter both a Character Name and a Room Name.");
-            return;
-        }
-        tableState.playerName = nameInput;
-        setupCameraAndVideo().then(() => {
-            initHybridMediaVttStack(roomInput, nameInput);
-        });
-    });
+    document.getElementById('join-btn').addEventListener('click', async () => {
+    const nameInput = document.getElementById('char-name-input').value.trim();
+    const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
+    
+    if (!nameInput || !roomInput) {
+        alert("Please enter both a Character Name and a Room Name.");
+        return;
+    }
+    
+    tableState.playerName = nameInput;
+    
+    try {
+        // Must await camera access before proceeding
+        await setupCameraAndVideo();
+        
+        // Now proceed to init the PeerJS stack
+        initHybridMediaVttStack(roomInput, nameInput);
+    } catch (e) {
+        console.error("Failed to join: Camera setup failed.");
+    }
+});
 
 
     function forcePlayerFocus() {
@@ -1194,25 +1203,20 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
 async function setupCameraAndVideo() {
-        const container = document.getElementById('local-video-container');
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 1.7777777778 } },
-                audio: true
-            });
-            const localVideoEl = document.getElementById('local-video');
-            if (localVideoEl) localVideoEl.srcObject = localStream;
-            if (peer && peer.id) addVideoFeed(localStream, peer.id, tableState.playerName);
-        } catch (err) {
-            console.error("Camera failed:", err);
-            const failAlert = document.createElement('div'); 
-            failAlert.className = 'hardware-fail-alert';
-            failAlert.innerText = "CAMERA BLOCKED OR NOT FOUND";
-            container.insertBefore(failAlert, container.firstChild); 
-            const vid = document.getElementById('local-video');
-            if (vid) vid.remove();
-        }
+    try {
+        // Request video and audio
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        
+        // Display local stream in the local video box
+        const localVideo = document.getElementById('local-video');
+        localVideo.srcObject = localStream;
+        console.log("DEBUG: Camera access granted.");
+    } catch (err) {
+        console.error("DEBUG: Camera access failed:", err);
+        alert("Camera/Mic access is required to see other players. Please allow permissions.");
+        throw err; // Stop execution if camera fails
     }
+}
 
 
     function addVideoFeed(stream, peerId, characterName) {
