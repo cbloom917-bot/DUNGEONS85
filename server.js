@@ -83,6 +83,8 @@ io.on('connection', (socket) => {
             polygons: state.fowPolygons, 
             darkness: state.isDarknessActive 
         });
+
+        socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
         
         io.to(currentRoom).emit('updatePlayerList', state.players);
 
@@ -155,6 +157,16 @@ io.on('connection', (socket) => {
             polygons: roomCampaignStates[currentRoom].fowPolygons,
             darkness: roomCampaignStates[currentRoom].isDarknessActive
         });
+    });
+
+
+    socket.on('setInitiativeSpotlight', (peerId) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+
+        const state = roomCampaignStates[currentRoom];
+        state.initiativePeerId = peerId ? String(peerId) : null;
+
+        io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
     });
 
     socket.on('disconnect', () => {
