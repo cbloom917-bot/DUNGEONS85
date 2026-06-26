@@ -69,11 +69,12 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     document.getElementById('role-player').classList.toggle('active', !isDMSelection);
 
     const gmRoomModeBox = document.getElementById('gm-room-mode');
+    const gmRoomNote = document.getElementById('gm-room-note');
     const roomInput = document.getElementById('room-id-input');
 
     if (isDMSelection) {
-        gmRoomModeBox.classList.remove('hidden');
-
+            gmRoomModeBox.classList.remove('hidden');
+            gmRoomNote.classList.remove('hidden');
         const lastRoom = localStorage.getItem('d85LastRoomName');
 
         if (lastRoom) {
@@ -91,6 +92,7 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
         }
     } else {
         gmRoomModeBox.classList.add('hidden');
+        gmRoomNote.classList.add('hidden');;
         roomInput.value = "";
     }
 }
