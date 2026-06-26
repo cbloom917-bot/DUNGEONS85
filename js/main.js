@@ -1071,7 +1071,7 @@ async function importD85Module(file) {
             }
 
             await Promise.all(imagePromises);
-
+            await new Promise(resolve => requestAnimationFrame(resolve));
             broadcastFullTableState();
 
             draw();
