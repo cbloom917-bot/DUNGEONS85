@@ -26,6 +26,8 @@ let localStream = null;
 let currentActiveRoomArray = [];
 let localPeerId = null;
 let activeRoomName = '';
+let initiativePeerId = null;
+let customVideoOrder = [];
 
 let isDrawingFoW = false;
 let currentFoWPolygon = [];
@@ -255,6 +257,17 @@ function initializeClient() {
         if (peer) peer.destroy();
     });
 
+    window.addEventListener('keydown', (e) => {
+        if (!tableState.isDM) return;
+        if (e.code !== 'Space') return;
+
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'button') return;
+
+        e.preventDefault();
+        advanceInitiativeSpotlight();
+    });
+
     bindLoginControls();
     bindJoinButton();
     draw();
@@ -348,6 +361,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 localVideoBox.dataset.peerId = localPeerId || "local";
                 localVideoBox.dataset.name = tableState.playerName || "You";
                 localVideoBox.dataset.isDm = tableState.isDM ? "true" : "false";
+                setupVideoBoxInitiative(localVideoBox);
             }
 
             document.getElementById('room-display').innerText = `Room: ${roomName}`;
@@ -412,6 +426,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 if (existingVideoBox) {
                     existingVideoBox.dataset.name = p.name || 'Player';
                     existingVideoBox.dataset.isDm = p.isDM ? 'true' : 'false';
+                    setupVideoBoxInitiative(existingVideoBox);
                     const label = document.getElementById(`label-${p.peerId}`);
                     if (label) label.innerText = p.name || 'Player';
                 }
@@ -513,6 +528,14 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             if (tableState.isDM) updateFogUI();
             draw();
+        });
+
+        socket.on('syncInitiativeSpotlight', (peerId) => {
+            setInitiativeSpotlight(peerId);
+        });
+
+        socket.on('syncVideoOrder', (peerOrder) => {
+            applyVideoOrder(peerOrder);
         });
     });
 }
@@ -1162,12 +1185,150 @@ function sortVideoRibbon() {
         if (aIsDM && !bIsDM) return -1;
         if (!aIsDM && bIsDM) return 1;
 
+        const aCustomIndex = customVideoOrder.indexOf(a.dataset.peerId);
+        const bCustomIndex = customVideoOrder.indexOf(b.dataset.peerId);
+
+        if (aCustomIndex !== -1 && bCustomIndex !== -1) return aCustomIndex - bCustomIndex;
+        if (aCustomIndex !== -1) return -1;
+        if (bCustomIndex !== -1) return 1;
+
         const aName = (a.dataset.name || '').toUpperCase();
         const bName = (b.dataset.name || '').toUpperCase();
         return aName.localeCompare(bName);
     });
 
     boxes.forEach(box => ribbon.appendChild(box));
+
+    if (initiativePeerId) {
+        setInitiativeSpotlight(initiativePeerId);
+    }
+}
+
+function setupVideoBoxInitiative(box) {
+    if (!box || box.dataset.initiativeBound === "true") return;
+
+    box.dataset.initiativeBound = "true";
+
+    box.addEventListener('click', () => {
+        if (!tableState.isDM) return;
+
+        const peerId = box.dataset.peerId;
+        if (!peerId) return;
+
+        const nextPeerId = initiativePeerId === peerId ? null : peerId;
+
+        setInitiativeSpotlight(nextPeerId);
+
+        if (socket) {
+            socket.emit('setInitiativeSpotlight', nextPeerId);
+        }
+    });
+
+    box.draggable = tableState.isDM && box.dataset.isDm !== "true";
+
+    box.addEventListener('dragstart', (e) => {
+        if (!tableState.isDM || box.dataset.isDm === "true") return;
+
+        e.dataTransfer.setData('text/plain', box.dataset.peerId);
+        box.classList.add('dragging');
+    });
+
+    box.addEventListener('dragend', () => {
+        box.classList.remove('dragging');
+    });
+
+    box.addEventListener('dragover', (e) => {
+        if (!tableState.isDM || box.dataset.isDm === "true") return;
+        e.preventDefault();
+    });
+
+    box.addEventListener('drop', (e) => {
+        if (!tableState.isDM || box.dataset.isDm === "true") return;
+
+        e.preventDefault();
+
+        const draggedPeerId = e.dataTransfer.getData('text/plain');
+        const targetPeerId = box.dataset.peerId;
+
+        if (!draggedPeerId || !targetPeerId || draggedPeerId === targetPeerId) return;
+
+        reorderVideoByDrop(draggedPeerId, targetPeerId);
+    });
+}
+
+function setInitiativeSpotlight(peerId) {
+    initiativePeerId = peerId || null;
+
+    document.querySelectorAll('.video-box').forEach(box => {
+        box.classList.toggle(
+            'initiative-active',
+            !!initiativePeerId && box.dataset.peerId === initiativePeerId
+        );
+    });
+}
+
+function getInitiativeOrder() {
+    return Array
+        .from(document.querySelectorAll('.video-box'))
+        .filter(box => box.dataset.peerId)
+        .map(box => box.dataset.peerId);
+}
+
+function advanceInitiativeSpotlight() {
+    if (!tableState.isDM) return;
+
+    const order = getInitiativeOrder();
+    if (!order.length) return;
+
+    let currentIndex = order.indexOf(initiativePeerId);
+
+    if (currentIndex === -1) {
+        currentIndex = 0;
+    } else {
+        currentIndex = (currentIndex + 1) % order.length;
+    }
+
+    const nextPeerId = order[currentIndex];
+
+    setInitiativeSpotlight(nextPeerId);
+
+    if (socket) {
+        socket.emit('setInitiativeSpotlight', nextPeerId);
+    }
+}
+
+function reorderVideoByDrop(draggedPeerId, targetPeerId) {
+    const ribbon = document.querySelector('.video-ribbon');
+    if (!ribbon) return;
+
+    const draggedBox = document.querySelector(`.video-box[data-peer-id="${draggedPeerId}"]`);
+    const targetBox = document.querySelector(`.video-box[data-peer-id="${targetPeerId}"]`);
+
+    if (!draggedBox || !targetBox) return;
+    if (draggedBox.dataset.isDm === "true") return;
+
+    ribbon.insertBefore(draggedBox, targetBox);
+
+    customVideoOrder = Array
+        .from(ribbon.querySelectorAll('.video-box'))
+        .filter(box => box.dataset.isDm !== "true")
+        .map(box => box.dataset.peerId)
+        .filter(Boolean);
+
+    if (socket) {
+        socket.emit('setVideoOrder', customVideoOrder);
+    }
+
+    if (initiativePeerId) {
+        setInitiativeSpotlight(initiativePeerId);
+    }
+}
+
+function applyVideoOrder(peerOrder) {
+    if (!Array.isArray(peerOrder)) return;
+
+    customVideoOrder = peerOrder;
+    sortVideoRibbon();
 }
 
 function addVideoFeed(stream, peerId, characterName, isDM = false) {
@@ -1175,6 +1336,7 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
     if (existingBox) {
         existingBox.dataset.name = characterName || 'Player';
         existingBox.dataset.isDm = isDM ? 'true' : 'false';
+        setupVideoBoxInitiative(existingBox);
         sortVideoRibbon();
         return;
     }
@@ -1204,7 +1366,12 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
     box.appendChild(label);
     ribbon.appendChild(box);
 
+    setupVideoBoxInitiative(box);
     sortVideoRibbon();
+
+    if (initiativePeerId) {
+        setInitiativeSpotlight(initiativePeerId);
+    }
 }
 
 function sanitizeFilenamePart(value) {
