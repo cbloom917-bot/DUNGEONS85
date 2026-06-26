@@ -1072,6 +1072,7 @@ async function importD85Module(file) {
 
             await Promise.all(imagePromises);
             await new Promise(resolve => requestAnimationFrame(resolve));
+
             broadcastFullTableState();
 
             draw();
@@ -1088,28 +1089,4 @@ async function importD85Module(file) {
     reader.readAsArrayBuffer(file);
 }
 
-await Promise.all(imagePromises);
-
-// Sync everyone else if we're the DM
-if (socket && tableState.isDM) {
-    if (tableState.mapSrc) {
-        socket.emit('updateMapImage', tableState.mapSrc);
-    }
-
-    broadcastTokensMatrixChange();
-    broadcastFoW();
-}
-
-// Now redraw after everything is loaded
 draw();
-
-alert(".d85 File loaded successfully!");
-        } catch (err) {
-            alert("Invalid .d85 file.");
-        } finally {
-            document.getElementById('loading-overlay').style.display = 'none'; // Hide spinner
-        }
-    };
-    reader.readAsArrayBuffer(file);
-}
-    draw();
