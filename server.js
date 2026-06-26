@@ -5,15 +5,14 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
-
-const allowedOrigins = process.env.CORS_ORIGIN 
-    ? process.env.CORS_ORIGIN.split(',') 
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',')
     : ["https://dungeons85.com", "https://www.dungeons85.com"];
 
-const io = new Server(server, { 
-    cors: { 
-        origin: allowedOrigins, 
-        methods: ["GET", "POST"] 
+const io = new Server(server, {
+    cors: {
+        origin: allowedOrigins,
+        methods: ["GET", "POST"]
     },
     maxHttpBufferSize: 1e8,
     transports: ['websocket'] 
@@ -122,7 +121,7 @@ io.on('connection', (socket) => {
 
     socket.on('updateMapImage', (mapSrcString) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
-        if (typeof mapSrcString !== 'string') return; // Type validation
+        if (typeof mapSrcString !== 'string') return;
         
         roomCampaignStates[currentRoom].mapSrc = mapSrcString;
         socket.to(currentRoom).emit('syncMap', mapSrcString);
@@ -138,12 +137,11 @@ io.on('connection', (socket) => {
         socket.to(currentRoom).emit('syncCamera', cameraData);
     });
 
-    // --- FOG OF WAR & DARKNESS SYNC LOGIC ---
+    // Fog of war and darkness state sync.
     socket.on('updateFoW', (fowData) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (!fowData || typeof fowData !== 'object') return;
 
-        // Sanitize booleans and arrays
         roomCampaignStates[currentRoom].fowEnabled = Boolean(fowData.enabled);
         
         if (Array.isArray(fowData.polygons)) {
@@ -208,7 +206,7 @@ io.on('connection', (socket) => {
                         delete roomCampaignStates[currentRoom];
                         console.log(`[SYS] Room ${currentRoom} wiped after 20 minutes of inactivity.`);
                     }
-                }, 1200000); // Changed to 20 minutes (1,200,000 milliseconds)
+                }, 1200000); // 20 minutes
             } else {
                 io.to(currentRoom).emit('updatePlayerList', state.players);
                 io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
