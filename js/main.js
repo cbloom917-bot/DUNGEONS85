@@ -69,6 +69,7 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     document.getElementById('role-player').classList.toggle('active', !isDMSelection);
 
     const gmRoomModeBox = document.getElementById('gm-room-mode');
+        if (gmRoomNote) gmRoomNote.classList.remove('hidden');
     const gmRoomNote = document.getElementById('gm-room-note');
     const roomInput = document.getElementById('room-id-input');
 
@@ -92,6 +93,7 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
         }
     } else {
         gmRoomModeBox.classList.add('hidden');
+        if (gmRoomNote) gmRoomNote.classList.add('hidden');
         gmRoomNote.classList.add('hidden');;
         roomInput.value = "";
     }
