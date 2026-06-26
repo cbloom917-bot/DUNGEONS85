@@ -28,6 +28,7 @@ let localPeerId = null;
 let activeRoomName = '';
 let initiativePeerId = null;
 let customVideoOrder = [];
+let tableOrder = []; // Saved exploration/marching order restored when combat initiative ends.
 
 let isDrawingFoW = false;
 let currentFoWPolygon = [];
@@ -1224,12 +1225,23 @@ function setupVideoBoxInitiative(box) {
         const peerId = box.dataset.peerId;
         if (!peerId) return;
 
-        const nextPeerId = initiativePeerId === peerId ? null : peerId;
+        // Clicking the active combatant ends combat initiative and restores
+        // the saved exploration/marching order from before initiative started.
+        if (initiativePeerId === peerId) {
+            clearInitiativeAndRestoreTableOrder();
+            return;
+        }
 
-        setInitiativeSpotlight(nextPeerId);
+        // First initiative selection starts combat. Preserve the current table order
+        // so the DM can freely rearrange combat order and then snap back later.
+        if (!initiativePeerId) {
+            captureTableOrderForCombat();
+        }
+
+        setInitiativeSpotlight(peerId);
 
         if (socket) {
-            socket.emit('setInitiativeSpotlight', nextPeerId);
+            socket.emit('setInitiativeSpotlight', peerId);
         }
     });
 
@@ -1263,6 +1275,38 @@ function setupVideoBoxInitiative(box) {
 
         reorderVideoByDrop(draggedPeerId, targetPeerId);
     });
+}
+
+function getCurrentVideoOrder() {
+    return Array
+        .from(document.querySelectorAll('.video-box'))
+        .filter(box => box.dataset.peerId)
+        .map(box => box.dataset.peerId);
+}
+
+function captureTableOrderForCombat() {
+    if (!tableOrder.length) {
+        tableOrder = getCurrentVideoOrder();
+    }
+}
+
+function clearInitiativeAndRestoreTableOrder() {
+    setInitiativeSpotlight(null);
+
+    if (socket) {
+        socket.emit('setInitiativeSpotlight', null);
+    }
+
+    if (tableOrder.length) {
+        const restoredOrder = [...tableOrder];
+        tableOrder = [];
+        customVideoOrder = restoredOrder;
+        applyVideoOrder(restoredOrder);
+
+        if (socket) {
+            socket.emit('setVideoOrder', restoredOrder);
+        }
+    }
 }
 
 function setInitiativeSpotlight(peerId) {
@@ -1303,6 +1347,10 @@ function advanceInitiativeSpotlight() {
     }
 
     const nextPeerId = order[currentIndex];
+
+    if (!initiativePeerId) {
+        captureTableOrderForCombat();
+    }
 
     setInitiativeSpotlight(nextPeerId);
 
