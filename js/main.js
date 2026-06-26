@@ -3,10 +3,9 @@
 // Version 9.0 Public Beta cleanup pass
 // ============================================================
 
-const APP_VERSION = "9.0 Public Beta";
 const SERVER_URL = "https://newvtt.onrender.com";
 const DEFAULT_TOKEN_SIZE = 70;
-const GRID_SIZE = 40;
+const GRID_SIZE = 70;
 
 let tableState = {
     playerName: '',
@@ -278,14 +277,14 @@ window.setRoleSelection = setRoleSelection;
 window.generateRandomRoomName = generateRandomRoomName;
 window.addEventListener('DOMContentLoaded', initializeClient);
 
-    function forcePlayerFocus() {
+function forcePlayerFocus() {
         if (!tableState.isDM || !socket) return;
         socket.emit('forceCamera', tableState.camera);
         addResultToHistoryTicker("[SYS]", 0, "GM FORCED CAMERA FOCUS");
     }
 
 
-    function toggleLocalAudio() {
+function toggleLocalAudio() {
         if (!localStream) return;
         const track = localStream.getAudioTracks()[0];
         if (track) {
@@ -297,7 +296,7 @@ window.addEventListener('DOMContentLoaded', initializeClient);
     }
 
 
-    function toggleLocalVideo() {
+function toggleLocalVideo() {
         if (!localStream) return;
         const track = localStream.getVideoTracks()[0];
         if (track) {
@@ -552,7 +551,7 @@ function toggleFogPanel() {
     }
 
 
-    function broadcastFoW() {
+function broadcastFoW() {
         if (!tableState.isDM || !socket) return;
         socket.emit('updateFoW', { 
             enabled: tableState.fowEnabled, 
@@ -560,7 +559,7 @@ function toggleFogPanel() {
             darkness: tableState.isDarknessActive 
         });
     }
-    function broadcastFullTableState() {
+function broadcastFullTableState() {
         if (!tableState.isDM || !socket) return;
 
         if (tableState.mapSrc) {
@@ -571,7 +570,7 @@ function toggleFogPanel() {
         broadcastFoW();
     }
 
-    function toggleFogMode() {
+function toggleFogMode() {
         if (!tableState.isDM) return;
         tableState.fowEnabled = !tableState.fowEnabled;
         if (!tableState.fowEnabled) {
@@ -584,7 +583,7 @@ function toggleFogPanel() {
     }
 
 
-    function toggleFogDraw() {
+function toggleFogDraw() {
         if (!tableState.isDM || !tableState.fowEnabled) return;
         isDrawingFoW = !isDrawingFoW;
         currentFoWPolygon = [];
@@ -593,7 +592,7 @@ function toggleFogPanel() {
     }
 
 
-    function resetFog() {
+function resetFog() {
         if (!tableState.isDM) return;
         tableState.fowPolygons = [];
         currentFoWPolygon = [];
@@ -604,7 +603,7 @@ function toggleFogPanel() {
     }
 
 
-    function updateFogUI() {
+function updateFogUI() {
     const btnToggle = document.getElementById('btn-fog-toggle');
     const btnDraw = document.getElementById('btn-fog-draw');
     const btnReset = document.getElementById('btn-fog-reset');
@@ -641,7 +640,7 @@ function toggleFogPanel() {
 }
 
 
-    function broadcastTokensMatrixChange() {
+function broadcastTokensMatrixChange() {
         if (!tableState.isDM || !socket) return;
         const leanTokens = tableState.tokens.map(t => ({
             id: t.id,
@@ -655,41 +654,7 @@ function toggleFogPanel() {
     }
 
 
-    function importAdventureJson(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const json = JSON.parse(e.target.result);
-                tableState.tokens = json.tokens || [];
-                tableState.mapSrc = json.savedMapSrc || null;
 
-
-                tableState.fowEnabled = json.fowEnabled || false;
-                tableState.fowPolygons = json.fowPolygons || [];
-                tableState.isDarknessActive = json.isDarknessActive || false;
-
-
-                if (tableState.mapSrc) {
-                    socket.emit('updateMapImage', tableState.mapSrc);
-                    loadCloudImage(tableState.mapSrc).then(() => draw());
-                }
-                broadcastTokensMatrixChange();
-
-
-                if (tableState.isDM) {
-                    updateFogUI();
-                    broadcastFoW();
-                }
-
-
-                tableState.tokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
-                draw();
-            } catch (err) { alert("JSON Parse Error."); }
-        };
-        reader.readAsText(file);
-    }
 
 
 // ============================================================
@@ -697,8 +662,8 @@ function toggleFogPanel() {
 // ============================================================
 
 let isDraggingWorkspace = false;
-    let dragStart = { x: 0, y: 0 };
-    let selectedToken = null;
+let dragStart = { x: 0, y: 0 };
+let selectedToken = null;
 
 
     canvas.addEventListener('contextmenu', (e) => {
@@ -817,7 +782,7 @@ let isDraggingWorkspace = false;
     });
 
 
-    function executeContextResize(newSize) {
+function executeContextResize(newSize) {
         if (!contextSelectedToken) return;
         contextSelectedToken.size = newSize;
         draw();
@@ -825,13 +790,13 @@ let isDraggingWorkspace = false;
     }
 
 
-    function executeContextReveal() {
+function executeContextReveal() {
         if (!contextSelectedToken) return; contextSelectedToken.hidden = !contextSelectedToken.hidden;
         draw(); broadcastTokensMatrixChange();
     }
 
 
-    function executeContextDuplicate() {
+function executeContextDuplicate() {
         if (!contextSelectedToken) return;
         const clone = {
             id: "token-" + Date.now() + Math.random(), src: contextSelectedToken.src,
@@ -842,14 +807,14 @@ let isDraggingWorkspace = false;
     }
 
 
-    function executeContextDelete() {
+function executeContextDelete() {
         if (!contextSelectedToken) return;
         tableState.tokens = tableState.tokens.filter(t => t.id !== contextSelectedToken.id);
         draw(); broadcastTokensMatrixChange();
     }
 
 
-    function makeElementsDraggable() {
+function makeElementsDraggable() {
         document.querySelectorAll('.toolbar').forEach(toolbar => {
             const handle = toolbar.querySelector('.panel-label');
             let xOffset = 0, yOffset = 0, xStart = 0, yStart = 0;
@@ -891,15 +856,15 @@ async function draw() {
             ctx.drawImage(mapImgAsset, -mapImgAsset.width / 2, -mapImgAsset.height / 2);
         } else {
             ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1;
-            const startX = Math.floor(viewLeft / 40) * 40;
-            const endX = Math.ceil(viewRight / 40) * 40;
-            const startY = Math.floor(viewTop / 40) * 40;
-            const endY = Math.ceil(viewBottom / 40) * 40;
+            const startX = Math.floor(viewLeft / GRID_SIZE) * GRID_SIZE;
+            const endX = Math.ceil(viewRight / GRID_SIZE) * GRID_SIZE;
+            const startY = Math.floor(viewTop / GRID_SIZE) * GRID_SIZE;
+            const endY = Math.ceil(viewBottom / GRID_SIZE) * GRID_SIZE;
 
 
             ctx.beginPath();
-            for (let i = startX; i <= endX; i += 40) { ctx.moveTo(i, startY); ctx.lineTo(i, endY); }
-            for (let i = startY; i <= endY; i += 40) { ctx.moveTo(startX, i); ctx.lineTo(endX, i); }
+            for (let i = startX; i <= endX; i += GRID_SIZE) { ctx.moveTo(i, startY); ctx.lineTo(i, endY); }
+            for (let i = startY; i <= endY; i += GRID_SIZE) { ctx.moveTo(startX, i); ctx.lineTo(endX, i); }
             ctx.stroke();
         }
 
@@ -1006,7 +971,7 @@ function rollDice(sides) {
     }
 
 
-    function executeDiceOverlayAnimation(sides, result, rollerName, posX, posY) {
+function executeDiceOverlayAnimation(sides, result, rollerName, posX, posY) {
         const interfaceWrapper = document.getElementById('vtt-interface');
         const container = document.createElement('div'); container.className = 'dice-container-overlay';
         container.style.left = `${posX}%`; container.style.top = `${posY}%`;
@@ -1031,7 +996,7 @@ function rollDice(sides) {
     }
 
 
-    function addResultToHistoryTicker(player, sides, result) {
+function addResultToHistoryTicker(player, sides, result) {
         const ticker = document.getElementById('ticker-log');
         const emptyMsg = document.getElementById('ticker-empty-msg');
         if (emptyMsg) emptyMsg.remove();
@@ -1044,17 +1009,17 @@ function rollDice(sides) {
     }
 
 
-    let torchInterval = null;
-    let torchSeconds = 0;
+let torchInterval = null;
+let torchSeconds = 0;
 
 
-    function toggleTorchPanel() {
+function toggleTorchPanel() {
         if (!tableState.isDM) return; 
         document.getElementById('torch-panel').classList.toggle('hidden');
     }
 
 
-    function igniteTorch() {
+function igniteTorch() {
         clearInterval(torchInterval);
         const randomDeduction = Math.floor(Math.random() * 301);
         torchSeconds = 3600 - randomDeduction;
@@ -1085,7 +1050,7 @@ function rollDice(sides) {
     }
 
 
-    function extinguishTorch() {
+function extinguishTorch() {
         clearInterval(torchInterval);
         document.getElementById('torch-light-btn').classList.remove('active');
         document.getElementById('torch-dark-status').classList.add('active');
@@ -1102,20 +1067,20 @@ function rollDice(sides) {
     }
 
 
-    function updateTorchDisplay() {
+function updateTorchDisplay() {
         const m = Math.floor(torchSeconds / 60).toString().padStart(2, '0');
         const s = (torchSeconds % 60).toString().padStart(2, '0');
         document.getElementById('torch-clock').innerText = `${m}:${s}`;
     }
 
 
-    function toggleTurnTracker() {
+function toggleTurnTracker() {
         if (!tableState.isDM) return;
         document.getElementById('turn-tracker-panel').classList.toggle('hidden');
     }
 
 
-    function checkTurn(boxNum) {
+function checkTurn(boxNum) {
         const box = document.getElementById(`turn-box-${boxNum}`);
         const msgDiv = document.getElementById('turn-message');
 
@@ -1138,7 +1103,7 @@ function rollDice(sides) {
     }
 
 
-    function resetTurns() {
+function resetTurns() {
         for(let i = 1; i <= 6; i++) {
             document.getElementById(`turn-box-${i}`).classList.remove('checked');
         }
