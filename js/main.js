@@ -531,6 +531,7 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncInitiativeSpotlight', (peerId) => {
+            console.log("DEBUG: syncInitiativeSpotlight received", peerId);
             setInitiativeSpotlight(peerId);
         });
 
@@ -1260,10 +1261,15 @@ function setInitiativeSpotlight(peerId) {
     initiativePeerId = peerId || null;
 
     document.querySelectorAll('.video-box').forEach(box => {
-        box.classList.toggle(
-            'initiative-active',
-            !!initiativePeerId && box.dataset.peerId === initiativePeerId
-        );
+        const matches =
+            !!initiativePeerId &&
+            (
+                box.dataset.peerId === initiativePeerId ||
+                box.id === `video-${initiativePeerId}` ||
+                (box.id === 'local-video-container' && localPeerId === initiativePeerId)
+            );
+
+        box.classList.toggle('initiative-active', matches);
     });
 }
 
