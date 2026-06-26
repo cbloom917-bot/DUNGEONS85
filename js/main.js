@@ -1180,18 +1180,26 @@ function sortVideoRibbon() {
     const boxes = Array.from(ribbon.querySelectorAll('.video-box'));
 
     boxes.sort((a, b) => {
+        const aPeerId = a.dataset.peerId;
+        const bPeerId = b.dataset.peerId;
+
+        // Once the DM manually arranges the table, that custom seating order wins.
+        // This includes the DM's own video, so the DM can sit anywhere in the clockwise order.
+        if (customVideoOrder.length) {
+            const aCustomIndex = customVideoOrder.indexOf(aPeerId);
+            const bCustomIndex = customVideoOrder.indexOf(bPeerId);
+
+            if (aCustomIndex !== -1 && bCustomIndex !== -1) return aCustomIndex - bCustomIndex;
+            if (aCustomIndex !== -1) return -1;
+            if (bCustomIndex !== -1) return 1;
+        }
+
+        // Default table layout before custom seating: DM first, then players alphabetically.
         const aIsDM = a.dataset.isDm === 'true';
         const bIsDM = b.dataset.isDm === 'true';
 
         if (aIsDM && !bIsDM) return -1;
         if (!aIsDM && bIsDM) return 1;
-
-        const aCustomIndex = customVideoOrder.indexOf(a.dataset.peerId);
-        const bCustomIndex = customVideoOrder.indexOf(b.dataset.peerId);
-
-        if (aCustomIndex !== -1 && bCustomIndex !== -1) return aCustomIndex - bCustomIndex;
-        if (aCustomIndex !== -1) return -1;
-        if (bCustomIndex !== -1) return 1;
 
         const aName = (a.dataset.name || '').toUpperCase();
         const bName = (b.dataset.name || '').toUpperCase();
@@ -1225,10 +1233,10 @@ function setupVideoBoxInitiative(box) {
         }
     });
 
-    box.draggable = tableState.isDM && box.dataset.isDm !== "true";
+    box.draggable = tableState.isDM;
 
     box.addEventListener('dragstart', (e) => {
-        if (!tableState.isDM || box.dataset.isDm === "true") return;
+        if (!tableState.isDM) return;
 
         e.dataTransfer.setData('text/plain', box.dataset.peerId);
         box.classList.add('dragging');
@@ -1239,12 +1247,12 @@ function setupVideoBoxInitiative(box) {
     });
 
     box.addEventListener('dragover', (e) => {
-        if (!tableState.isDM || box.dataset.isDm === "true") return;
+        if (!tableState.isDM) return;
         e.preventDefault();
     });
 
     box.addEventListener('drop', (e) => {
-        if (!tableState.isDM || box.dataset.isDm === "true") return;
+        if (!tableState.isDM) return;
 
         e.preventDefault();
 
@@ -1311,13 +1319,12 @@ function reorderVideoByDrop(draggedPeerId, targetPeerId) {
     const targetBox = document.querySelector(`.video-box[data-peer-id="${targetPeerId}"]`);
 
     if (!draggedBox || !targetBox) return;
-    if (draggedBox.dataset.isDm === "true") return;
 
     ribbon.insertBefore(draggedBox, targetBox);
 
+    // Store the complete seating order, including the DM.
     customVideoOrder = Array
         .from(ribbon.querySelectorAll('.video-box'))
-        .filter(box => box.dataset.isDm !== "true")
         .map(box => box.dataset.peerId)
         .filter(Boolean);
 
