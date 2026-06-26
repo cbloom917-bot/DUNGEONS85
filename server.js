@@ -53,7 +53,8 @@ io.on('connection', (socket) => {
                 fowEnabled: false, 
                 fowPolygons: [],
                 isDarknessActive: false,
-                initiativePeerId: null
+                initiativePeerId: null,
+                videoOrder: []
             };
         }
 
@@ -85,6 +86,7 @@ io.on('connection', (socket) => {
         });
 
         socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
+        socket.emit('syncVideoOrder', state.videoOrder || []);
         
         io.to(currentRoom).emit('updatePlayerList', state.players);
 
@@ -169,10 +171,36 @@ io.on('connection', (socket) => {
         io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
     });
 
+
+    socket.on('setVideoOrder', (peerOrder) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!Array.isArray(peerOrder)) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const activePeerIds = new Set(state.players.map(p => String(p.peerId)));
+        const dmPeerIds = new Set(state.players.filter(p => p.isDM).map(p => String(p.peerId)));
+
+        // Store player order only. The DM is always anchored far left on every client.
+        state.videoOrder = peerOrder
+            .map(peerId => String(peerId))
+            .filter(peerId => activePeerIds.has(peerId) && !dmPeerIds.has(peerId));
+
+        io.to(currentRoom).emit('syncVideoOrder', state.videoOrder);
+    });
+
     socket.on('disconnect', () => {
         if (currentRoom && roomCampaignStates[currentRoom]) {
             const state = roomCampaignStates[currentRoom];
+            const departingPlayer = state.players.find(p => p.socketId === socket.id);
             state.players = state.players.filter(p => p.socketId !== socket.id);
+
+            const remainingPeerIds = new Set(state.players.map(p => String(p.peerId)));
+            state.videoOrder = (state.videoOrder || []).filter(peerId => remainingPeerIds.has(String(peerId)));
+
+            if (departingPlayer && state.initiativePeerId === String(departingPlayer.peerId)) {
+                state.initiativePeerId = null;
+                io.to(currentRoom).emit('syncInitiativeSpotlight', null);
+            }
             
             if (state.players.length === 0) {
                 state.wipeTimer = setTimeout(() => {
@@ -183,6 +211,7 @@ io.on('connection', (socket) => {
                 }, 1200000); // Changed to 20 minutes (1,200,000 milliseconds)
             } else {
                 io.to(currentRoom).emit('updatePlayerList', state.players);
+                io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
             }
         }
     });
