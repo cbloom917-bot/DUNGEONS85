@@ -1,89 +1,132 @@
-let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera: { x: 0, y: 0, zoom: 1 }, fowEnabled: false, fowPolygons: [], isDarknessActive: false };
-    let tokenImageCache = {}, socket = null, peer = null, localStream = null, currentActiveRoomArray = [];
-    let isDrawingFoW = false, currentFoWPolygon = [], currentMouseWorldX = 0, currentMouseWorldY = 0;
-    
-    // ADDED: Declare contextSelectedToken globally
-    let contextSelectedToken = null;
-    let gmRoomMode = "create";
-    let localPeerId = null;
-    let initiativeSpotlightPeerId = null;
-    
-    const canvas = document.getElementById('vtt-canvas'), ctx = canvas.getContext('2d'), ctxMenu = document.getElementById('ctx-menu');
-    const fogCanvas = document.createElement('canvas'), fogCtx = fogCanvas.getContext('2d');
+// ============================================================
+// Dungeons '85 — Client Runtime
+// Version 9.0 Public Beta cleanup pass
+// ============================================================
 
-    // --- V8: LOADING OVERLAY ---
-    function showLoading(msg = "RECONSTRUCTING DUNGEON...") {
-        document.getElementById('loading-msg').innerText = msg;
-        document.getElementById('loading-overlay').style.display = 'flex';
-    }
-    function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
+const APP_VERSION = "9.0 Public Beta";
+const SERVER_URL = "https://newvtt.onrender.com";
+const DEFAULT_TOKEN_SIZE = 70;
+const GRID_SIZE = 40;
 
-    // --- V8: LOCAL-FIRST ASSET LOADER ---
-    function selectLocalFile(mode) {
-        if (!tableState.isDM) return;
-        const input = document.createElement('input');
-        input.type = 'file'; input.accept = 'image/*';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            showLoading("PROCESSING ASSET...");
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const dataUrl = event.target.result;
-                if (mode === 'MAP') {
-                    tableState.mapSrc = dataUrl;
-                    if (socket) socket.emit('updateMapImage', dataUrl);
-                } else {
-                    tableState.tokens.push({ id: "token-" + Date.now(), src: dataUrl, x: (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom, y: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom, size: 70, hidden: true });
-                    broadcastTokensMatrixChange();
-                }
-                loadCloudImage(dataUrl).then(() => { hideLoading(); draw(); });
-            };
-            reader.readAsDataURL(file);
-        };
-        input.click();
-    }
+let tableState = {
+    playerName: '',
+    isDM: false,
+    mapSrc: null,
+    tokens: [],
+    camera: { x: 0, y: 0, zoom: 1 },
+    fowEnabled: false,
+    fowPolygons: [],
+    isDarknessActive: false
+};
+
+let tokenImageCache = {};
+let socket = null;
+let peer = null;
+let localStream = null;
+let currentActiveRoomArray = [];
+let localPeerId = null;
+let activeRoomName = '';
+
+let isDrawingFoW = false;
+let currentFoWPolygon = [];
+let currentMouseWorldX = 0;
+let currentMouseWorldY = 0;
+let contextSelectedToken = null;
+let gmRoomMode = "create";
+
+const canvas = document.getElementById('vtt-canvas');
+const ctx = canvas.getContext('2d');
+const ctxMenu = document.getElementById('ctx-menu');
+const fogCanvas = document.createElement('canvas');
+const fogCtx = fogCanvas.getContext('2d');
+
+const adjectives = ["Dark", "Iron", "Black", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Death", "Broken"];
+const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
+
+// ============================================================
+// Loading overlay and asset loading
+// ============================================================
+
+function showLoading(msg = "RECONSTRUCTING DUNGEON...") {
+    document.getElementById('loading-msg').innerText = msg;
+    document.getElementById('loading-overlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-overlay').style.display = 'none';
+}
 
 async function loadCloudImage(src) {
     if (!src) return null;
-
-    if (tokenImageCache[src] && tokenImageCache[src].complete) {
-        return tokenImageCache[src];
-    }
+    if (tokenImageCache[src] && tokenImageCache[src].complete) return tokenImageCache[src];
 
     return new Promise((resolve, reject) => {
         const img = new Image();
-
-        img.onload = async () => {
-            try {
-                if (img.decode) await img.decode();
-            } catch (err) {
-                // Some browsers reject decode() for already-loaded data URLs; drawing still works.
-            }
-
+        img.onload = () => {
             tokenImageCache[src] = img;
             resolve(img);
         };
-
-        img.onerror = () => {
-            console.error("Failed to load image:", src);
-            reject(new Error("Image failed to load"));
-        };
-
+        img.onerror = () => reject(new Error(`Image failed to load: ${src}`));
         img.src = src;
     });
 }
 
-    const adjectives = ["Dark", "Iron", "Black", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Death", "Broken"];
-    const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
+function selectLocalFile(mode) {
+    if (!tableState.isDM) return;
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        showLoading("PROCESSING ASSET...");
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const dataUrl = event.target.result;
+
+            if (mode === 'MAP') {
+                tableState.mapSrc = dataUrl;
+                if (socket) socket.emit('updateMapImage', dataUrl);
+            } else {
+                tableState.tokens.push({
+                    id: `token-${Date.now()}`,
+                    src: dataUrl,
+                    x: (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom,
+                    y: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom,
+                    size: DEFAULT_TOKEN_SIZE,
+                    hidden: true
+                });
+                broadcastTokensMatrixChange();
+            }
+
+            loadCloudImage(dataUrl).then(() => {
+                hideLoading();
+                draw();
+            }).catch((err) => {
+                console.error(err);
+                hideLoading();
+            });
+        };
+
+        reader.readAsDataURL(file);
+    };
+
+    input.click();
+}
+
+// ============================================================
+// Login and room selection
+// ============================================================
 
 function generateRandomRoomName(force = false) {
     const roomInput = document.getElementById('room-id-input');
     if (!roomInput) return;
 
-    if (!force && roomInput.value.trim()) {
-        return;
-    }
+    if (!force && roomInput.value.trim()) return;
 
     const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
@@ -95,127 +138,131 @@ function generateRandomRoomName(force = false) {
 function setRoleSelection(isDMSelection) {
     tableState.isDM = isDMSelection;
 
-    const roleDm = document.getElementById('role-dm');
-    const rolePlayer = document.getElementById('role-player');
+    const dmButton = document.getElementById('role-dm');
+    const playerButton = document.getElementById('role-player');
     const gmRoomModeBox = document.getElementById('gm-room-mode');
     const gmRoomNote = document.getElementById('gm-room-note');
     const roomInput = document.getElementById('room-id-input');
 
-    if (roleDm) roleDm.classList.toggle('active', isDMSelection);
-    if (rolePlayer) rolePlayer.classList.toggle('active', !isDMSelection);
+    if (dmButton) dmButton.classList.toggle('active', isDMSelection);
+    if (playerButton) playerButton.classList.toggle('active', !isDMSelection);
 
     if (isDMSelection) {
         if (gmRoomModeBox) gmRoomModeBox.classList.remove('hidden');
         if (gmRoomNote) gmRoomNote.classList.remove('hidden');
 
         const lastRoom = localStorage.getItem('d85LastRoomName');
-        const gmRejoin = document.getElementById('gm-rejoin');
-        const gmCreate = document.getElementById('gm-create');
+        const rejoinButton = document.getElementById('gm-rejoin');
+        const createButton = document.getElementById('gm-create');
 
         if (lastRoom) {
             gmRoomMode = "rejoin";
-            if (gmRejoin) {
-                gmRejoin.innerText = `REJOIN ${lastRoom}`;
-                gmRejoin.classList.add('active');
+            if (rejoinButton) {
+                rejoinButton.innerText = `REJOIN ${lastRoom}`;
+                rejoinButton.classList.add('active');
             }
-            if (gmCreate) gmCreate.classList.remove('active');
+            if (createButton) createButton.classList.remove('active');
             if (roomInput) roomInput.value = lastRoom;
         } else {
             gmRoomMode = "create";
-            if (gmRejoin) {
-                gmRejoin.innerText = "REJOIN LAST";
-                gmRejoin.classList.remove('active');
+            if (rejoinButton) {
+                rejoinButton.innerText = "REJOIN LAST";
+                rejoinButton.classList.remove('active');
             }
-            if (gmCreate) gmCreate.classList.add('active');
+            if (createButton) createButton.classList.add('active');
             generateRandomRoomName(true);
         }
     } else {
+        gmRoomMode = "rejoin";
         if (gmRoomModeBox) gmRoomModeBox.classList.add('hidden');
         if (gmRoomNote) gmRoomNote.classList.add('hidden');
         if (roomInput) roomInput.value = "";
     }
 }
 
-function initializeLoginControls() {
+function bindLoginControls() {
     const gmRejoinBtn = document.getElementById('gm-rejoin');
     const gmCreateBtn = document.getElementById('gm-create');
+    const roomInput = document.getElementById('room-id-input');
 
-    if (!gmRejoinBtn || !gmCreateBtn) return;
+    if (gmRejoinBtn && gmCreateBtn) {
+        gmRejoinBtn.addEventListener('click', () => {
+            const lastRoom = localStorage.getItem('d85LastRoomName');
+            if (!lastRoom || !roomInput) return;
 
-    gmRejoinBtn.addEventListener('click', () => {
-        const lastRoom = localStorage.getItem('d85LastRoomName');
-        if (!lastRoom) return;
+            gmRoomMode = "rejoin";
+            roomInput.value = lastRoom;
+            gmRejoinBtn.classList.add('active');
+            gmCreateBtn.classList.remove('active');
+        });
 
-        gmRoomMode = "rejoin";
-        document.getElementById('room-id-input').value = lastRoom;
+        gmCreateBtn.addEventListener('click', () => {
+            gmRoomMode = "create";
+            generateRandomRoomName(true);
+            gmCreateBtn.classList.add('active');
+            gmRejoinBtn.classList.remove('active');
+        });
+    }
+}
 
-        gmRejoinBtn.classList.add('active');
-        gmCreateBtn.classList.remove('active');
-    });
+function bindJoinButton() {
+    const joinBtn = document.getElementById('join-btn');
+    if (!joinBtn) return;
 
-    gmCreateBtn.addEventListener('click', () => {
-        gmRoomMode = "create";
-        generateRandomRoomName(true);
+    joinBtn.addEventListener('click', async () => {
+        const nameInput = document.getElementById('char-name-input').value.trim();
 
-        gmCreateBtn.classList.add('active');
-        gmRejoinBtn.classList.remove('active');
+        if (tableState.isDM && gmRoomMode === "create") {
+            generateRandomRoomName(true);
+        }
+
+        const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
+
+        if (!nameInput || !roomInput) {
+            alert("Please enter both a Character Name and a Room Name.");
+            return;
+        }
+
+        tableState.playerName = nameInput;
+        activeRoomName = roomInput;
+
+        localStorage.setItem('d85LastRoomName', roomInput);
+        localStorage.setItem('d85LastPlayerName', nameInput);
+        localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
+
+        try {
+            await setupCameraAndVideo();
+            initHybridMediaVttStack(roomInput, nameInput);
+        } catch (e) {
+            console.error("Failed to join: Camera setup failed.", e);
+        }
     });
 }
 
-window.setRoleSelection = setRoleSelection;
-window.generateRandomRoomName = generateRandomRoomName;
+function resizeCanvas() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    fogCanvas.width = canvas.width;
+    fogCanvas.height = canvas.height;
+    draw();
+}
 
-window.addEventListener('DOMContentLoaded', () => {
-    initializeLoginControls();
-
-    window.addEventListener('click', () => {
-        ctxMenu.style.display = 'none';
-    });
-
+function initializeClient() {
+    window.addEventListener('click', () => { ctxMenu.style.display = 'none'; });
+    window.addEventListener('resize', resizeCanvas);
     window.addEventListener('beforeunload', () => {
         if (socket) socket.disconnect();
         if (peer) peer.destroy();
     });
-});
 
-function resizeCanvas() {
-        canvas.width = canvas.clientWidth; 
-        canvas.height = canvas.clientHeight; 
+    bindLoginControls();
+    bindJoinButton();
+    draw();
+}
 
-        fogCanvas.width = canvas.width;
-        fogCanvas.height = canvas.height;
-
-        draw();
-    }
-    window.addEventListener('resize', resizeCanvas);
-
-document.getElementById('join-btn').addEventListener('click', async () => {
-    const nameInput = document.getElementById('char-name-input').value.trim();
-
-    if (tableState.isDM && gmRoomMode === "create") {
-        generateRandomRoomName(true);
-    }
-
-    const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
-
-    if (!nameInput || !roomInput) {
-        alert("Please enter both a Character Name and a Room Name.");
-        return;
-    }
-
-    tableState.playerName = nameInput;
-    localStorage.setItem('d85LastRoomName', roomInput);
-    localStorage.setItem('d85LastPlayerName', nameInput);
-    localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
-
-    try {
-        await setupCameraAndVideo();
-        initHybridMediaVttStack(roomInput, nameInput);
-    } catch (e) {
-        console.error("Failed to join: Camera setup failed.", e);
-    }
-});
-
+window.setRoleSelection = setRoleSelection;
+window.generateRandomRoomName = generateRandomRoomName;
+window.addEventListener('DOMContentLoaded', initializeClient);
 
     function forcePlayerFocus() {
         if (!tableState.isDM || !socket) return;
@@ -247,6 +294,10 @@ document.getElementById('join-btn').addEventListener('click', async () => {
         }
     }
 
+
+// ============================================================
+// Networking: Socket.IO + PeerJS
+// ============================================================
 
 function initHybridMediaVttStack(roomName, playerName) {
     console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
@@ -284,24 +335,25 @@ function initHybridMediaVttStack(roomName, playerName) {
         console.log("DEBUG: PeerJS open", peerId);
         localPeerId = peerId;
 
-        socket = io("https://newvtt.onrender.com", {
+        socket = io(SERVER_URL, {
             transports: ["websocket"]
         });
 
         socket.on('connect', () => {
             console.log("DEBUG: Socket connected", socket.id);
+            activeRoomName = roomName;
+
+            const localVideoBox = document.getElementById('local-video-container');
+            if (localVideoBox) {
+                localVideoBox.dataset.peerId = localPeerId || "local";
+                localVideoBox.dataset.name = tableState.playerName || "You";
+                localVideoBox.dataset.isDm = tableState.isDM ? "true" : "false";
+            }
 
             document.getElementById('room-display').innerText = `Room: ${roomName}`;
             document.getElementById('top-nav').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('vtt-interface').classList.remove('hidden');
-
-            const localVideoBox = document.getElementById('local-video-container');
-            if (localVideoBox) {
-                localVideoBox.dataset.peerId = peerId;
-                localVideoBox.dataset.name = tableState.playerName || 'You';
-                localVideoBox.dataset.isDm = tableState.isDM ? 'true' : 'false';
-            }
             sortVideoRibbon();
 
             const emptyMsg = document.getElementById('ticker-empty-msg');
@@ -344,7 +396,6 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         socket.on('updatePlayerList', (playersArray) => {
             console.log("DEBUG: updatePlayerList", playersArray);
-            updateVideoMetadataFromPlayers(playersArray);
 
             const previousPlayers = currentActiveRoomArray || [];
 
@@ -353,6 +404,16 @@ function initHybridMediaVttStack(roomName, playerName) {
                 if (!stillConnected) {
                     const deadBox = document.getElementById(`video-${oldPlayer.peerId}`);
                     if (deadBox) deadBox.remove();
+                }
+            });
+
+            playersArray.forEach(p => {
+                const existingVideoBox = document.getElementById(`video-${p.peerId}`);
+                if (existingVideoBox) {
+                    existingVideoBox.dataset.name = p.name || 'Player';
+                    existingVideoBox.dataset.isDm = p.isDM ? 'true' : 'false';
+                    const label = document.getElementById(`label-${p.peerId}`);
+                    if (label) label.innerText = p.name || 'Player';
                 }
             });
 
@@ -372,7 +433,8 @@ function initHybridMediaVttStack(roomName, playerName) {
                 }
             });
 
-            currentActiveRoomArray = playersArray;
+            currentActiveRoomArray = sortPlayersForRibbon(playersArray);
+            sortVideoRibbon();
         });
 
         peer.on('call', (call) => {
@@ -452,15 +514,14 @@ function initHybridMediaVttStack(roomName, playerName) {
             if (tableState.isDM) updateFogUI();
             draw();
         });
-
-        socket.on('initiativeSpotlightChanged', (peerId) => {
-            initiativeSpotlightPeerId = peerId || null;
-            applyInitiativeSpotlight();
-        });
     });
 }
 
-    function toggleFogPanel() {
+// ============================================================
+// Fog of War, darkness, and table-state broadcasting
+// ============================================================
+
+function toggleFogPanel() {
         if (!tableState.isDM) return;
         document.getElementById('fog-panel').classList.toggle('hidden');
     }
@@ -606,7 +667,11 @@ function initHybridMediaVttStack(roomName, playerName) {
     }
 
 
-    let isDraggingWorkspace = false;
+// ============================================================
+// Canvas interaction: camera, tokens, context menu
+// ============================================================
+
+let isDraggingWorkspace = false;
     let dragStart = { x: 0, y: 0 };
     let selectedToken = null;
 
@@ -778,7 +843,11 @@ function initHybridMediaVttStack(roomName, playerName) {
     }
 
 
- async function draw() {
+// ============================================================
+// Canvas rendering
+// ============================================================
+
+async function draw() {
         ctx.fillStyle = '#000000'; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.save(); 
@@ -899,8 +968,11 @@ function initHybridMediaVttStack(roomName, playerName) {
     }
 
 
-    function rollDice(sides) {
-        if (!socket) return;
+// ============================================================
+// Dice, torch, and turn tracker
+// ============================================================
+
+function rollDice(sides) {
         const finalResult = Math.floor(Math.random() * sides) + 1;
         socket.emit('executeDiceRoll', {
             sides, result: finalResult, player: tableState.playerName,
@@ -1049,6 +1121,10 @@ function initHybridMediaVttStack(roomName, playerName) {
     }
 
 
+// ============================================================
+// Media and persistence
+// ============================================================
+
 async function setupCameraAndVideo() {
     try {
         // Request video and audio
@@ -1065,24 +1141,19 @@ async function setupCameraAndVideo() {
     }
 }
 
-function getOrderedVideoBoxes() {
-    const container = document.getElementById('peer-videos-container');
-    if (!container) return [];
-
-    return Array.from(container.querySelectorAll('.video-box'));
+function sortPlayersForRibbon(players) {
+    return [...(players || [])].sort((a, b) => {
+        if (a.isDM && !b.isDM) return -1;
+        if (!a.isDM && b.isDM) return 1;
+        return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+    });
 }
 
 function sortVideoRibbon() {
-    const container = document.getElementById('peer-videos-container');
-    const localBox = document.getElementById('local-video-container');
+    const ribbon = document.querySelector('.video-ribbon');
+    if (!ribbon) return;
 
-    if (!container || !localBox) return;
-
-    if (localBox.parentElement !== container) {
-        container.prepend(localBox);
-    }
-
-    const boxes = getOrderedVideoBoxes();
+    const boxes = Array.from(ribbon.querySelectorAll('.video-box'));
 
     boxes.sort((a, b) => {
         const aIsDM = a.dataset.isDm === 'true';
@@ -1091,120 +1162,32 @@ function sortVideoRibbon() {
         if (aIsDM && !bIsDM) return -1;
         if (!aIsDM && bIsDM) return 1;
 
-        const aOrder = Number(a.dataset.seatOrder || 9999);
-        const bOrder = Number(b.dataset.seatOrder || 9999);
-
-        if (aOrder !== bOrder) return aOrder - bOrder;
-
         const aName = (a.dataset.name || '').toUpperCase();
         const bName = (b.dataset.name || '').toUpperCase();
-
         return aName.localeCompare(bName);
     });
 
-    boxes.forEach(box => container.appendChild(box));
-    applyInitiativeSpotlight();
+    boxes.forEach(box => ribbon.appendChild(box));
 }
-
-function updateVideoMetadataFromPlayers(playersArray) {
-    if (!Array.isArray(playersArray)) return;
-
-    playersArray.forEach((player, index) => {
-        const box = player.peerId === localPeerId
-            ? document.getElementById('local-video-container')
-            : document.getElementById(`video-${player.peerId}`);
-
-        if (!box) return;
-
-        box.dataset.peerId = player.peerId;
-        box.dataset.name = player.name || 'Player';
-        box.dataset.isDm = player.isDM ? 'true' : 'false';
-        box.dataset.seatOrder = String(index);
-
-        const label = box.querySelector('.video-label');
-        if (label) label.innerText = player.name || 'Player';
-    });
-
-    sortVideoRibbon();
-}
-
-function applyInitiativeSpotlight() {
-    getOrderedVideoBoxes().forEach(box => {
-        box.classList.toggle(
-            'initiative-active',
-            Boolean(initiativeSpotlightPeerId) && box.dataset.peerId === initiativeSpotlightPeerId
-        );
-    });
-}
-
-function setInitiativeSpotlight(peerId, shouldBroadcast = true) {
-    if (!peerId) return;
-
-    initiativeSpotlightPeerId = peerId;
-    applyInitiativeSpotlight();
-
-    if (shouldBroadcast && tableState.isDM && socket) {
-        socket.emit('setInitiativeSpotlight', peerId);
-    }
-}
-
-function advanceInitiativeSpotlight() {
-    if (!tableState.isDM) return;
-
-    const boxes = getOrderedVideoBoxes().filter(box => box.dataset.peerId);
-    if (boxes.length === 0) return;
-
-    const currentIndex = boxes.findIndex(box => box.dataset.peerId === initiativeSpotlightPeerId);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % boxes.length;
-
-    setInitiativeSpotlight(boxes[nextIndex].dataset.peerId, true);
-}
-
-window.addEventListener('keydown', (event) => {
-    if (event.code !== 'Space') return;
-    if (!tableState.isDM) return;
-
-    const target = event.target;
-    const isTyping = target && (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-    );
-
-    if (isTyping) return;
-
-    event.preventDefault();
-    advanceInitiativeSpotlight();
-});
 
 function addVideoFeed(stream, peerId, characterName, isDM = false) {
-    let box = document.getElementById(`video-${peerId}`);
-
-    if (box) {
-        const existingVideo = box.querySelector('video');
-        if (existingVideo && existingVideo.srcObject !== stream) {
-            existingVideo.srcObject = stream;
-        }
+    const existingBox = document.getElementById(`video-${peerId}`);
+    if (existingBox) {
+        existingBox.dataset.name = characterName || 'Player';
+        existingBox.dataset.isDm = isDM ? 'true' : 'false';
+        sortVideoRibbon();
         return;
     }
 
-    const container = document.getElementById('peer-videos-container');
-    if (!container) return;
+    const ribbon = document.querySelector('.video-ribbon');
+    if (!ribbon) return;
 
-    box = document.createElement('div');
-    box.className = "video-box";
+    const box = document.createElement('div');
+    box.className = 'video-box';
     box.id = `video-${peerId}`;
     box.dataset.peerId = peerId;
-    box.dataset.name = characterName || "Player";
-    box.dataset.isDm = isDM ? "true" : "false";
-    const playerMeta = currentActiveRoomArray.find(player => player.peerId === peerId);
-    if (playerMeta) {
-        box.dataset.name = playerMeta.name || box.dataset.name;
-        box.dataset.isDm = playerMeta.isDM ? "true" : "false";
-        box.dataset.seatOrder = String(currentActiveRoomArray.indexOf(playerMeta));
-    } else {
-        box.dataset.seatOrder = "9999";
-    }
+    box.dataset.name = characterName || 'Player';
+    box.dataset.isDm = isDM ? 'true' : 'false';
 
     const videoEl = document.createElement('video');
     videoEl.srcObject = stream;
@@ -1213,30 +1196,27 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
     videoEl.muted = false;
 
     const label = document.createElement('div');
-    label.className = "video-label";
+    label.className = 'video-label';
     label.id = `label-${peerId}`;
-    label.innerText = characterName || "Player Connected";
-
-    box.addEventListener('click', () => {
-        if (tableState.isDM) {
-            setInitiativeSpotlight(box.dataset.peerId, true);
-        }
-    });
+    label.innerText = characterName || 'Player Connected';
 
     box.appendChild(videoEl);
     box.appendChild(label);
-    container.appendChild(box);
+    ribbon.appendChild(box);
 
     sortVideoRibbon();
 }
 
-const localVideoContainer = document.getElementById('local-video-container');
-if (localVideoContainer) {
-    localVideoContainer.addEventListener('click', () => {
-        if (tableState.isDM && localVideoContainer.dataset.peerId) {
-            setInitiativeSpotlight(localVideoContainer.dataset.peerId, true);
-        }
-    });
+function sanitizeFilenamePart(value) {
+    return String(value || 'DUNGEONS85')
+        .replace(/[^a-z0-9_-]+/gi, '')
+        .substring(0, 40) || 'DUNGEONS85';
+}
+
+function getExportTimestamp() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
 function exportTableState() {
@@ -1245,8 +1225,11 @@ function exportTableState() {
     const blob = new Blob([compressedData], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+
+    const roomName = sanitizeFilenamePart(activeRoomName || localStorage.getItem('d85LastRoomName') || 'DUNGEONS85');
     a.href = url;
-    a.download = `adventure-${Date.now()}.d85`;
+    a.download = `${roomName}[${getExportTimestamp()}].d85`;
+
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
