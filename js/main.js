@@ -5,6 +5,8 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
     // ADDED: Declare contextSelectedToken globally
     let contextSelectedToken = null;
     let gmRoomMode = "create";
+    let localPeerId = null;
+    let initiativeSpotlightPeerId = null;
     
     const canvas = document.getElementById('vtt-canvas'), ctx = canvas.getContext('2d'), ctxMenu = document.getElementById('ctx-menu');
     const fogCanvas = document.createElement('canvas'), fogCtx = fogCanvas.getContext('2d');
@@ -42,74 +44,104 @@ let tableState = { playerName: '', isDM: false, mapSrc: null, tokens: [], camera
         input.click();
     }
 
-    async function loadCloudImage(src) {
-        if (!src) return Promise.resolve(null);
-        if (tokenImageCache[src]) return Promise.resolve(tokenImageCache[src]);
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => { tokenImageCache[src] = img; resolve(img); };
-            img.src = src;
-        });
+async function loadCloudImage(src) {
+    if (!src) return null;
+
+    if (tokenImageCache[src] && tokenImageCache[src].complete) {
+        return tokenImageCache[src];
     }
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+
+        img.onload = async () => {
+            try {
+                if (img.decode) await img.decode();
+            } catch (err) {
+                // Some browsers reject decode() for already-loaded data URLs; drawing still works.
+            }
+
+            tokenImageCache[src] = img;
+            resolve(img);
+        };
+
+        img.onerror = () => {
+            console.error("Failed to load image:", src);
+            reject(new Error("Image failed to load"));
+        };
+
+        img.src = src;
+    });
+}
 
     const adjectives = ["Dark", "Iron", "Black", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Death", "Broken"];
     const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
 
-    function generateRandomRoomName() {
+function generateRandomRoomName(force = false) {
+    const roomInput = document.getElementById('room-id-input');
+    if (!roomInput) return;
+
+    if (!force && roomInput.value.trim()) {
+        return;
+    }
+
     const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
     const num = Math.floor(100 + Math.random() * 900);
-    document.getElementById('room-id-input').value = `${adj}${noun}${num}`;
+
+    roomInput.value = `${adj}${noun}${num}`;
 }
 
-    function setRoleSelection(isDMSelection) {
+function setRoleSelection(isDMSelection) {
     tableState.isDM = isDMSelection;
 
-    document.getElementById('role-dm').classList.toggle('active', isDMSelection);
-    document.getElementById('role-player').classList.toggle('active', !isDMSelection);
-
+    const roleDm = document.getElementById('role-dm');
+    const rolePlayer = document.getElementById('role-player');
     const gmRoomModeBox = document.getElementById('gm-room-mode');
-        if (gmRoomNote) gmRoomNote.classList.remove('hidden');
     const gmRoomNote = document.getElementById('gm-room-note');
     const roomInput = document.getElementById('room-id-input');
 
+    if (roleDm) roleDm.classList.toggle('active', isDMSelection);
+    if (rolePlayer) rolePlayer.classList.toggle('active', !isDMSelection);
+
     if (isDMSelection) {
-            gmRoomModeBox.classList.remove('hidden');
-            gmRoomNote.classList.remove('hidden');
+        if (gmRoomModeBox) gmRoomModeBox.classList.remove('hidden');
+        if (gmRoomNote) gmRoomNote.classList.remove('hidden');
+
         const lastRoom = localStorage.getItem('d85LastRoomName');
+        const gmRejoin = document.getElementById('gm-rejoin');
+        const gmCreate = document.getElementById('gm-create');
 
         if (lastRoom) {
             gmRoomMode = "rejoin";
-            document.getElementById('gm-rejoin').innerText = `REJOIN ${lastRoom}`;
-            document.getElementById('gm-rejoin').classList.add('active');
-            document.getElementById('gm-create').classList.remove('active');
-            roomInput.value = lastRoom;
+            if (gmRejoin) {
+                gmRejoin.innerText = `REJOIN ${lastRoom}`;
+                gmRejoin.classList.add('active');
+            }
+            if (gmCreate) gmCreate.classList.remove('active');
+            if (roomInput) roomInput.value = lastRoom;
         } else {
             gmRoomMode = "create";
-            document.getElementById('gm-rejoin').innerText = "REJOIN LAST";
-            document.getElementById('gm-rejoin').classList.remove('active');
-            document.getElementById('gm-create').classList.add('active');
+            if (gmRejoin) {
+                gmRejoin.innerText = "REJOIN LAST";
+                gmRejoin.classList.remove('active');
+            }
+            if (gmCreate) gmCreate.classList.add('active');
             generateRandomRoomName(true);
         }
     } else {
-        gmRoomModeBox.classList.add('hidden');
+        if (gmRoomModeBox) gmRoomModeBox.classList.add('hidden');
         if (gmRoomNote) gmRoomNote.classList.add('hidden');
-        gmRoomNote.classList.add('hidden');;
-        roomInput.value = "";
+        if (roomInput) roomInput.value = "";
     }
 }
 
-window.setRoleSelection = setRoleSelection;
-window.generateRandomRoomName = generateRandomRoomName;
-window.setRoleSelection = setRoleSelection;
+function initializeLoginControls() {
+    const gmRejoinBtn = document.getElementById('gm-rejoin');
+    const gmCreateBtn = document.getElementById('gm-create');
 
-window.addEventListener('DOMContentLoaded', () => {
-    window.addEventListener('click', () => {
-        ctxMenu.style.display = 'none';
-        const gmRejoinBtn = document.getElementById('gm-rejoin');
-const gmCreateBtn = document.getElementById('gm-create');
+    if (!gmRejoinBtn || !gmCreateBtn) return;
 
-if (gmRejoinBtn && gmCreateBtn) {
     gmRejoinBtn.addEventListener('click', () => {
         const lastRoom = localStorage.getItem('d85LastRoomName');
         if (!lastRoom) return;
@@ -129,16 +161,20 @@ if (gmRejoinBtn && gmCreateBtn) {
         gmRejoinBtn.classList.remove('active');
     });
 }
+
+window.setRoleSelection = setRoleSelection;
+window.generateRandomRoomName = generateRandomRoomName;
+
+window.addEventListener('DOMContentLoaded', () => {
+    initializeLoginControls();
+
+    window.addEventListener('click', () => {
+        ctxMenu.style.display = 'none';
     });
 
     window.addEventListener('beforeunload', () => {
-        if (socket) {
-            socket.disconnect();
-        }
-
-        if (peer) {
-            peer.destroy();
-        }
+        if (socket) socket.disconnect();
+        if (peer) peer.destroy();
     });
 });
 
@@ -153,32 +189,30 @@ function resizeCanvas() {
     }
     window.addEventListener('resize', resizeCanvas);
 
-
-    document.getElementById('join-btn').addEventListener('click', async () => {
+document.getElementById('join-btn').addEventListener('click', async () => {
     const nameInput = document.getElementById('char-name-input').value.trim();
-    const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
-    
+
     if (tableState.isDM && gmRoomMode === "create") {
-    generateRandomRoomName(true);
-}
+        generateRandomRoomName(true);
+    }
+
+    const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
+
     if (!nameInput || !roomInput) {
         alert("Please enter both a Character Name and a Room Name.");
         return;
     }
-    
+
     tableState.playerName = nameInput;
-        localStorage.setItem('d85LastRoomName', roomInput);
-        localStorage.setItem('d85LastPlayerName', nameInput);
-        localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
-    
+    localStorage.setItem('d85LastRoomName', roomInput);
+    localStorage.setItem('d85LastPlayerName', nameInput);
+    localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
+
     try {
-        // Must await camera access before proceeding
         await setupCameraAndVideo();
-        
-        // Now proceed to init the PeerJS stack
         initHybridMediaVttStack(roomInput, nameInput);
     } catch (e) {
-        console.error("Failed to join: Camera setup failed.");
+        console.error("Failed to join: Camera setup failed.", e);
     }
 });
 
@@ -248,6 +282,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
     peer.on('open', (peerId) => {
         console.log("DEBUG: PeerJS open", peerId);
+        localPeerId = peerId;
 
         socket = io("https://newvtt.onrender.com", {
             transports: ["websocket"]
@@ -260,6 +295,14 @@ function initHybridMediaVttStack(roomName, playerName) {
             document.getElementById('top-nav').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('vtt-interface').classList.remove('hidden');
+
+            const localVideoBox = document.getElementById('local-video-container');
+            if (localVideoBox) {
+                localVideoBox.dataset.peerId = peerId;
+                localVideoBox.dataset.name = tableState.playerName || 'You';
+                localVideoBox.dataset.isDm = tableState.isDM ? 'true' : 'false';
+            }
+            sortVideoRibbon();
 
             const emptyMsg = document.getElementById('ticker-empty-msg');
             if (emptyMsg) emptyMsg.remove();
@@ -301,6 +344,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         socket.on('updatePlayerList', (playersArray) => {
             console.log("DEBUG: updatePlayerList", playersArray);
+            updateVideoMetadataFromPlayers(playersArray);
 
             const previousPlayers = currentActiveRoomArray || [];
 
@@ -319,7 +363,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                     const call = peer.call(p.peerId, localStream);
 
                     call.on('stream', (remoteStream) => {
-                        addVideoFeed(remoteStream, call.peer, p.name);
+                        addVideoFeed(remoteStream, call.peer, p.name, p.isDM);
                     });
 
                     call.on('error', (err) => {
@@ -344,7 +388,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             call.on('stream', (remoteStream) => {
                 const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
                 const displayName = caller ? caller.name : "Player";
-                addVideoFeed(remoteStream, call.peer, displayName);
+                addVideoFeed(remoteStream, call.peer, displayName, caller ? caller.isDM : false);
             });
 
             call.on('error', (err) => {
@@ -407,6 +451,11 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             if (tableState.isDM) updateFogUI();
             draw();
+        });
+
+        socket.on('initiativeSpotlightChanged', (peerId) => {
+            initiativeSpotlightPeerId = peerId || null;
+            applyInitiativeSpotlight();
         });
     });
 }
@@ -851,6 +900,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
 
     function rollDice(sides) {
+        if (!socket) return;
         const finalResult = Math.floor(Math.random() * sides) + 1;
         socket.emit('executeDiceRoll', {
             sides, result: finalResult, player: tableState.playerName,
@@ -1015,20 +1065,179 @@ async function setupCameraAndVideo() {
     }
 }
 
+function getOrderedVideoBoxes() {
+    const container = document.getElementById('peer-videos-container');
+    if (!container) return [];
 
-    function addVideoFeed(stream, peerId, characterName) {
-        const existingBox = document.getElementById(`video-${peerId}`);
-        if (existingBox) return;
-        const container = document.getElementById('peer-videos-container');
-        const box = document.createElement('div'); 
-        box.className = "video-box"; box.id = `video-${peerId}`;
-        const videoEl = document.createElement('video'); 
-        videoEl.srcObject = stream; videoEl.autoplay = true; videoEl.playsInline = true; videoEl.muted = false; 
-        const label = document.createElement('div'); 
-        label.className = "video-label"; label.id = `label-${peerId}`; 
-        label.innerText = characterName || "Player Connected"; 
-        box.appendChild(videoEl); box.appendChild(label); container.appendChild(box);
+    return Array.from(container.querySelectorAll('.video-box'));
+}
+
+function sortVideoRibbon() {
+    const container = document.getElementById('peer-videos-container');
+    const localBox = document.getElementById('local-video-container');
+
+    if (!container || !localBox) return;
+
+    if (localBox.parentElement !== container) {
+        container.prepend(localBox);
     }
+
+    const boxes = getOrderedVideoBoxes();
+
+    boxes.sort((a, b) => {
+        const aIsDM = a.dataset.isDm === 'true';
+        const bIsDM = b.dataset.isDm === 'true';
+
+        if (aIsDM && !bIsDM) return -1;
+        if (!aIsDM && bIsDM) return 1;
+
+        const aOrder = Number(a.dataset.seatOrder || 9999);
+        const bOrder = Number(b.dataset.seatOrder || 9999);
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
+        const aName = (a.dataset.name || '').toUpperCase();
+        const bName = (b.dataset.name || '').toUpperCase();
+
+        return aName.localeCompare(bName);
+    });
+
+    boxes.forEach(box => container.appendChild(box));
+    applyInitiativeSpotlight();
+}
+
+function updateVideoMetadataFromPlayers(playersArray) {
+    if (!Array.isArray(playersArray)) return;
+
+    playersArray.forEach((player, index) => {
+        const box = player.peerId === localPeerId
+            ? document.getElementById('local-video-container')
+            : document.getElementById(`video-${player.peerId}`);
+
+        if (!box) return;
+
+        box.dataset.peerId = player.peerId;
+        box.dataset.name = player.name || 'Player';
+        box.dataset.isDm = player.isDM ? 'true' : 'false';
+        box.dataset.seatOrder = String(index);
+
+        const label = box.querySelector('.video-label');
+        if (label) label.innerText = player.name || 'Player';
+    });
+
+    sortVideoRibbon();
+}
+
+function applyInitiativeSpotlight() {
+    getOrderedVideoBoxes().forEach(box => {
+        box.classList.toggle(
+            'initiative-active',
+            Boolean(initiativeSpotlightPeerId) && box.dataset.peerId === initiativeSpotlightPeerId
+        );
+    });
+}
+
+function setInitiativeSpotlight(peerId, shouldBroadcast = true) {
+    if (!peerId) return;
+
+    initiativeSpotlightPeerId = peerId;
+    applyInitiativeSpotlight();
+
+    if (shouldBroadcast && tableState.isDM && socket) {
+        socket.emit('setInitiativeSpotlight', peerId);
+    }
+}
+
+function advanceInitiativeSpotlight() {
+    if (!tableState.isDM) return;
+
+    const boxes = getOrderedVideoBoxes().filter(box => box.dataset.peerId);
+    if (boxes.length === 0) return;
+
+    const currentIndex = boxes.findIndex(box => box.dataset.peerId === initiativeSpotlightPeerId);
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % boxes.length;
+
+    setInitiativeSpotlight(boxes[nextIndex].dataset.peerId, true);
+}
+
+window.addEventListener('keydown', (event) => {
+    if (event.code !== 'Space') return;
+    if (!tableState.isDM) return;
+
+    const target = event.target;
+    const isTyping = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+    );
+
+    if (isTyping) return;
+
+    event.preventDefault();
+    advanceInitiativeSpotlight();
+});
+
+function addVideoFeed(stream, peerId, characterName, isDM = false) {
+    let box = document.getElementById(`video-${peerId}`);
+
+    if (box) {
+        const existingVideo = box.querySelector('video');
+        if (existingVideo && existingVideo.srcObject !== stream) {
+            existingVideo.srcObject = stream;
+        }
+        return;
+    }
+
+    const container = document.getElementById('peer-videos-container');
+    if (!container) return;
+
+    box = document.createElement('div');
+    box.className = "video-box";
+    box.id = `video-${peerId}`;
+    box.dataset.peerId = peerId;
+    box.dataset.name = characterName || "Player";
+    box.dataset.isDm = isDM ? "true" : "false";
+    const playerMeta = currentActiveRoomArray.find(player => player.peerId === peerId);
+    if (playerMeta) {
+        box.dataset.name = playerMeta.name || box.dataset.name;
+        box.dataset.isDm = playerMeta.isDM ? "true" : "false";
+        box.dataset.seatOrder = String(currentActiveRoomArray.indexOf(playerMeta));
+    } else {
+        box.dataset.seatOrder = "9999";
+    }
+
+    const videoEl = document.createElement('video');
+    videoEl.srcObject = stream;
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.muted = false;
+
+    const label = document.createElement('div');
+    label.className = "video-label";
+    label.id = `label-${peerId}`;
+    label.innerText = characterName || "Player Connected";
+
+    box.addEventListener('click', () => {
+        if (tableState.isDM) {
+            setInitiativeSpotlight(box.dataset.peerId, true);
+        }
+    });
+
+    box.appendChild(videoEl);
+    box.appendChild(label);
+    container.appendChild(box);
+
+    sortVideoRibbon();
+}
+
+const localVideoContainer = document.getElementById('local-video-container');
+if (localVideoContainer) {
+    localVideoContainer.addEventListener('click', () => {
+        if (tableState.isDM && localVideoContainer.dataset.peerId) {
+            setInitiativeSpotlight(localVideoContainer.dataset.peerId, true);
+        }
+    });
+}
 
 function exportTableState() {
     const stateString = JSON.stringify(tableState);
