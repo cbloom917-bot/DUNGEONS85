@@ -178,12 +178,12 @@ io.on('connection', (socket) => {
 
         const state = roomCampaignStates[currentRoom];
         const activePeerIds = new Set(state.players.map(p => String(p.peerId)));
-        const dmPeerIds = new Set(state.players.filter(p => p.isDM).map(p => String(p.peerId)));
 
-        // Store player order only. The DM is always anchored far left on every client.
+        // Store the full seating order, including the DM.
+        // This lets the DM place themselves anywhere in the clockwise initiative order.
         state.videoOrder = peerOrder
             .map(peerId => String(peerId))
-            .filter(peerId => activePeerIds.has(peerId) && !dmPeerIds.has(peerId));
+            .filter(peerId => activePeerIds.has(peerId));
 
         io.to(currentRoom).emit('syncVideoOrder', state.videoOrder);
     });
