@@ -52,7 +52,8 @@ io.on('connection', (socket) => {
                 wipeTimer: null, 
                 fowEnabled: false, 
                 fowPolygons: [],
-                isDarknessActive: false
+                isDarknessActive: false,
+                initiativePeerId: null
             };
         }
 
