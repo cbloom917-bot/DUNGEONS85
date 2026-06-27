@@ -25,18 +25,6 @@ const roomCampaignStates = {};
 io.on('connection', (socket) => {
     let currentRoom = null;
 
-    function getCurrentState() {
-        if (!currentRoom) return null;
-        return roomCampaignStates[currentRoom] || null;
-    }
-
-    function isCurrentSocketDM() {
-        const state = getCurrentState();
-        if (!state) return false;
-        return state.players.some(p => p.socketId === socket.id && p.isDM === true);
-    }
-
-
     socket.on('joinRoom', (data) => {
         if (!data || typeof data !== 'object') return;
         
@@ -110,8 +98,14 @@ io.on('connection', (socket) => {
 
     socket.on('updateTokensMatrix', (tokens) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
-        
         if (!Array.isArray(tokens)) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+
+        // Only the GM can replace the full token list.
+        // This prevents a reconnecting/stale player client from resurrecting old token state.
+        if (!player || !player.isDM) return;
 
         const leanTokens = tokens.map(t => ({
             id: String(t.id),
@@ -127,24 +121,22 @@ io.on('connection', (socket) => {
     });
 
     socket.on('tokenMove', (data) => {
-        const state = getCurrentState();
-        if (!state || !data || typeof data !== 'object') return;
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!data || typeof data !== 'object') return;
 
-        const tokenId = String(data.id);
-        const x = Number(data.x);
-        const y = Number(data.y);
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
 
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        // Only the GM should be moving/updating table tokens.
+        if (!player || !player.isDM) return;
 
-        // Keep the server's authoritative token list current during drags.
-        // Without this, the next full sync can replay an older token matrix.
-        const token = state.tokens.find(t => String(t.id) === tokenId);
+        const token = state.tokens.find(t => String(t.id) === String(data.id));
         if (token) {
-            token.x = x;
-            token.y = y;
+            token.x = Number(data.x) || token.x;
+            token.y = Number(data.y) || token.y;
         }
 
-        socket.to(currentRoom).emit('tokenMoved', { id: tokenId, x, y });
+        socket.to(currentRoom).emit('tokenMoved', data);
     });
 
     socket.on('updateMapImage', (mapSrcString) => {
@@ -162,7 +154,6 @@ io.on('connection', (socket) => {
 
     socket.on('forceCamera', (cameraData) => {
         if (!currentRoom || !cameraData || typeof cameraData !== 'object') return;
-        if (!isCurrentSocketDM()) return;
         socket.to(currentRoom).emit('syncCamera', cameraData);
     });
 
@@ -190,10 +181,9 @@ io.on('connection', (socket) => {
 
 
     socket.on('setInitiativeSpotlight', (peerId) => {
-        const state = getCurrentState();
-        if (!state) return;
-        if (!isCurrentSocketDM()) return;
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
 
+        const state = roomCampaignStates[currentRoom];
         state.initiativePeerId = peerId ? String(peerId) : null;
 
         io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
@@ -201,11 +191,10 @@ io.on('connection', (socket) => {
 
 
     socket.on('setVideoOrder', (peerOrder) => {
-        const state = getCurrentState();
-        if (!state) return;
-        if (!isCurrentSocketDM()) return;
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (!Array.isArray(peerOrder)) return;
 
+        const state = roomCampaignStates[currentRoom];
         const activePeerIds = new Set(state.players.map(p => String(p.peerId)));
 
         // Store the full seating order, including the DM.
