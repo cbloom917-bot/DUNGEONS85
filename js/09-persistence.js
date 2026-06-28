@@ -33,11 +33,9 @@ function exportTableState() {
 async function importD85Module(file) {
     if (!file) return;
 
-    showDungeonLoadingOverlay();
-    if (socket) socket.emit('dungeonLoadStart');
+    showDungeonLoading();
 
     const reader = new FileReader();
-    let notifiedLoadComplete = false;
 
     reader.onload = async (e) => {
         try {
@@ -69,14 +67,11 @@ async function importD85Module(file) {
 
             draw();
 
-            if (socket) socket.emit('dungeonLoadComplete');
-            notifiedLoadComplete = true;
             alert(".d85 File loaded successfully!");
         } catch (err) {
             console.error("D85 Import Error:", err);
             alert("Invalid .d85 file.");
         } finally {
-            if (socket && !notifiedLoadComplete) socket.emit('dungeonLoadComplete');
             hideLoading();
         }
     };
