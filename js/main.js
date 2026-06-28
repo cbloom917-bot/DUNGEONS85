@@ -338,8 +338,12 @@ function initHybridMediaVttStack(roomName, playerName) {
     peer = new Peer(undefined, webrtcIceConfig);
 
     peer.on('disconnected', () => {
-        console.log("DEBUG: PeerJS disconnected; attempting reconnect");
+        console.warn("DEBUG: PeerJS disconnected; attempting reconnect");
         peer.reconnect();
+    });
+
+    peer.on('close', () => {
+        console.warn("DEBUG: PeerJS closed");
     });
 
     peer.on('error', (err) => {
@@ -350,8 +354,40 @@ function initHybridMediaVttStack(roomName, playerName) {
         console.log("DEBUG: PeerJS open", peerId);
         localPeerId = peerId;
 
+        console.count("DEBUG: Creating Socket.IO client");
+
         socket = io(SERVER_URL, {
             transports: ["websocket"]
+        });
+
+        // Temporary reconnect diagnostics. These logs tell us whether the
+        // browser, network, Socket.IO transport, or server is closing the socket.
+        socket.on('disconnect', (reason) => {
+            console.warn("DEBUG: Socket disconnected:", reason);
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error("DEBUG: Socket connect_error:", err?.message || err, err);
+        });
+
+        socket.on('error', (err) => {
+            console.error("DEBUG: Socket error:", err);
+        });
+
+        socket.io.on('reconnect_attempt', (attempt) => {
+            console.warn("DEBUG: Socket reconnect attempt:", attempt);
+        });
+
+        socket.io.on('reconnect', (attempt) => {
+            console.warn("DEBUG: Socket reconnected after attempts:", attempt);
+        });
+
+        socket.io.on('reconnect_error', (err) => {
+            console.error("DEBUG: Socket reconnect_error:", err?.message || err, err);
+        });
+
+        socket.io.on('reconnect_failed', () => {
+            console.error("DEBUG: Socket reconnect_failed");
         });
 
         socket.on('connect', () => {
@@ -395,10 +431,6 @@ function initHybridMediaVttStack(roomName, playerName) {
             // The server now owns join/rejoin notifications.
             // Do not send a client-side "created table" message here, because
             // Socket.IO fires this connect handler again after normal reconnects.
-        });
-
-        socket.on('connect_error', (err) => {
-            console.error("DEBUG: Socket connection error:", err);
         });
 
         socket.on('joinError', (message) => {
