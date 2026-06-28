@@ -53,11 +53,15 @@ function getPublicNotes(notes) {
         }));
 }
 
-function emitNotesToRoom(roomName) {
+function emitNotesToRoom(roomName, sourceSocketId = null) {
     const state = roomCampaignStates[roomName];
     if (!state) return;
 
     state.players.forEach(player => {
+        // The GM already owns the authoritative local notes state after editing.
+        // Echoing syncNotes back to the editing socket can create an update loop.
+        if (sourceSocketId && player.socketId === sourceSocketId) return;
+
         const payload = player.isDM ? state.notes : getPublicNotes(state.notes);
         io.to(player.socketId).emit('syncNotes', payload);
     });
@@ -210,7 +214,7 @@ io.on('connection', (socket) => {
             .filter(Boolean)
             .slice(0, 500);
 
-        emitNotesToRoom(currentRoom);
+        emitNotesToRoom(currentRoom, socket.id);
     });
 
     socket.on('executeDiceRoll', (rollData) => {
