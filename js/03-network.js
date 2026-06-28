@@ -212,14 +212,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             hasReceivedInitialMapSync = true;
             tableState.mapSrc = mapSrc;
-
-            if (!tableState.isDM) showDungeonLoading();
-            loadCloudImage(mapSrc)
-                .then(() => draw())
-                .catch((err) => console.error("DEBUG: syncMap image load failed:", err))
-                .finally(() => {
-                    if (!tableState.isDM) hideDungeonLoading();
-                });
+            loadCloudImage(mapSrc).then(() => draw());
         });
 
         socket.on('syncTokens', (incomingTokens) => {
@@ -238,20 +231,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             hasReceivedInitialTokenSync = true;
             tableState.tokens = serverTokens;
-
-            const tokenImageLoads = serverTokens
-                .filter(t => t && t.src)
-                .map(t => loadCloudImage(t.src));
-
-            if (!tableState.isDM && tokenImageLoads.length > 0) showDungeonLoading();
-
-            Promise.allSettled(tokenImageLoads)
-                .then(() => draw())
-                .catch((err) => console.error("DEBUG: syncTokens image load failed:", err))
-                .finally(() => {
-                    if (!tableState.isDM && tokenImageLoads.length > 0) hideDungeonLoading();
-                });
-
+            serverTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
             draw();
         });
 

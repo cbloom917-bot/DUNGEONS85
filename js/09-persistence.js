@@ -33,7 +33,7 @@ function exportTableState() {
 async function importD85Module(file) {
     if (!file) return;
 
-    showDungeonLoading();
+    document.getElementById('loading-overlay').style.display = 'flex';
 
     const reader = new FileReader();
 
@@ -72,7 +72,7 @@ async function importD85Module(file) {
             console.error("D85 Import Error:", err);
             alert("Invalid .d85 file.");
         } finally {
-            hideLoading();
+            document.getElementById('loading-overlay').style.display = 'none';
         }
     };
 
