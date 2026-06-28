@@ -321,9 +321,10 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             // Reconnect safety: if the GM has local note work, do not let a stale
             // server snapshot erase it after a brief websocket reconnect.
+            // Do not re-broadcast here; server echoes and reconnect syncs can otherwise
+            // produce an updateNotes/syncNotes loop.
             if (tableState.isDM && hasReceivedInitialNotesSync && hasLocalNotes) {
                 console.warn("DEBUG: Ignoring syncNotes after GM reconnect to protect local notes state.");
-                broadcastNotes();
                 return;
             }
 
