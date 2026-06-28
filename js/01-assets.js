@@ -5,13 +5,64 @@
 // Loading overlay and asset loading
 // ============================================================
 
-function showLoading(msg = "RECONSTRUCTING DUNGEON...") {
-    document.getElementById('loading-msg').innerText = msg;
-    document.getElementById('loading-overlay').style.display = 'flex';
+const DUNGEON_LOADING_MESSAGES = [
+    "LOADING DUNGEON...",
+    "BUILDING WALLS...",
+    "SETTING TRAPS...",
+    "RELEASING MONSTERS...",
+    "POLISHING TREASURE...",
+    "FINISHING TOUCHES..."
+];
+
+let dungeonLoadingMessageTimer = null;
+let dungeonLoadingMessageIndex = 0;
+
+function setLoadingMessage(msg) {
+    const loadingMsg = document.getElementById('loading-msg');
+    if (loadingMsg) loadingMsg.innerText = msg;
+}
+
+function stopDungeonLoadingMessages() {
+    if (dungeonLoadingMessageTimer) {
+        clearInterval(dungeonLoadingMessageTimer);
+        dungeonLoadingMessageTimer = null;
+    }
+}
+
+function startDungeonLoadingMessages() {
+    stopDungeonLoadingMessages();
+    dungeonLoadingMessageIndex = 0;
+    setLoadingMessage(DUNGEON_LOADING_MESSAGES[dungeonLoadingMessageIndex]);
+
+    dungeonLoadingMessageTimer = setInterval(() => {
+        dungeonLoadingMessageIndex = (dungeonLoadingMessageIndex + 1) % DUNGEON_LOADING_MESSAGES.length;
+        setLoadingMessage(DUNGEON_LOADING_MESSAGES[dungeonLoadingMessageIndex]);
+    }, 450);
+}
+
+function showLoading(msg = "RECONSTRUCTING DUNGEON...", rotateDungeonMessages = false) {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (!loadingOverlay) return;
+
+    if (rotateDungeonMessages) {
+        startDungeonLoadingMessages();
+    } else {
+        stopDungeonLoadingMessages();
+        setLoadingMessage(msg);
+    }
+
+    loadingOverlay.style.display = 'flex';
+}
+
+function showDungeonLoading() {
+    showLoading("LOADING DUNGEON...", true);
 }
 
 function hideLoading() {
-    document.getElementById('loading-overlay').style.display = 'none';
+    stopDungeonLoadingMessages();
+
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
 async function loadCloudImage(src) {

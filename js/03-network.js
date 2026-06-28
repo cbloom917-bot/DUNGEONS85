@@ -212,7 +212,22 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             hasReceivedInitialMapSync = true;
             tableState.mapSrc = mapSrc;
-            loadCloudImage(mapSrc).then(() => draw());
+
+            // Player-facing feedback only. This does not change sync order or delay
+            // map/token delivery; it simply uses the existing loading overlay while
+            // the incoming map image is decoded by the browser.
+            if (!tableState.isDM) showDungeonLoading();
+
+            loadCloudImage(mapSrc)
+                .then(() => {
+                    draw();
+                })
+                .catch((err) => {
+                    console.error(err);
+                })
+                .finally(() => {
+                    if (!tableState.isDM) hideLoading();
+                });
         });
 
         socket.on('syncTokens', (incomingTokens) => {
