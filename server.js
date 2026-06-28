@@ -39,6 +39,8 @@ io.on('connection', (socket) => {
         playerName = playerName.substring(0, 50);
         isDM = Boolean(isDM);
         
+        const roomAlreadyExisted = Boolean(roomCampaignStates[currentRoom]);
+
         if (!roomCampaignStates[currentRoom]) {
             if (!isDM) {
                 socket.emit('joinError', 'That room does not exist. Please check the name or wait for the DM to start the table.');
@@ -89,8 +91,8 @@ io.on('connection', (socket) => {
         
         io.to(currentRoom).emit('updatePlayerList', state.players);
 
-        const entryMsg = isDM 
-            ? `${playerName} HAS CREATED THE TABLE` 
+        const entryMsg = isDM
+            ? (roomAlreadyExisted ? `${playerName} HAS REJOINED THE TABLE` : `${playerName} HAS CREATED THE TABLE`)
             : `${playerName} HAS JOINED THE TABLE`;
 
         io.to(currentRoom).emit('playerNotification', entryMsg);
