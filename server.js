@@ -93,11 +93,14 @@ io.on('connection', (socket) => {
         
         io.to(currentRoom).emit('updatePlayerList', state.players);
 
-        const entryMsg = isDM
-            ? `${playerName} HAS CREATED THE TABLE`
-            : `${playerName} HAS JOINED THE TABLE`;
-
-        io.to(currentRoom).emit('playerNotification', entryMsg);
+        // Only announce meaningful table-entry events.
+        // A GM websocket reconnect should be silent; otherwise brief transport
+        // closes spam the table log and look like new table creation.
+        if (isDM && !roomAlreadyExisted) {
+            io.to(currentRoom).emit('playerNotification', `${playerName} HAS CREATED THE TABLE`);
+        } else if (!isDM) {
+            io.to(currentRoom).emit('playerNotification', `${playerName} HAS JOINED THE TABLE`);
+        }
     });
 
     socket.on('updateTokensMatrix', (tokens) => {
