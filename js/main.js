@@ -35,6 +35,7 @@ let currentMouseWorldX = 0;
 let currentMouseWorldY = 0;
 let contextSelectedToken = null;
 let gmRoomMode = "create";
+let hasReceivedInitialTokenSync = false;
 
 const canvas = document.getElementById('vtt-canvas');
 const ctx = canvas.getContext('2d');
@@ -314,6 +315,7 @@ function toggleLocalVideo() {
 
 function initHybridMediaVttStack(roomName, playerName) {
     console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
+    hasReceivedInitialTokenSync = false;
 
     if (socket) {
         socket.disconnect();
@@ -390,13 +392,9 @@ function initHybridMediaVttStack(roomName, playerName) {
                 peerId
             });
 
-            setTimeout(() => {
-                const entryMessage = tableState.isDM
-                    ? `${tableState.playerName} HAS CREATED THE TABLE`
-                    : `${tableState.playerName} HAS JOINED THE TABLE`;
-
-                socket.emit('playerNotification', entryMessage);
-            }, 500);
+            // The server now owns join/rejoin notifications.
+            // Do not send a client-side "created table" message here, because
+            // Socket.IO fires this connect handler again after normal reconnects.
         });
 
         socket.on('connect_error', (err) => {
@@ -479,8 +477,22 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncTokens', (incomingTokens) => {
-            tableState.tokens = incomingTokens;
-            incomingTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
+            const serverTokens = Array.isArray(incomingTokens)
+                ? incomingTokens
+                : (incomingTokens && Array.isArray(incomingTokens.tokens) ? incomingTokens.tokens : []);
+
+            // Reconnect safety: if the GM still has an active local table, do not let
+            // a stale server snapshot replace newer local token work after reconnect.
+            // Instead, immediately re-publish the GM's local token matrix to the server.
+            if (tableState.isDM && hasReceivedInitialTokenSync && tableState.tokens.length > 0) {
+                console.warn("DEBUG: Ignoring syncTokens after GM reconnect to protect local token state.");
+                broadcastTokensMatrixChange();
+                return;
+            }
+
+            hasReceivedInitialTokenSync = true;
+            tableState.tokens = serverTokens;
+            serverTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
             draw();
         });
 
