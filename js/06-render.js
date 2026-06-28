@@ -5,6 +5,48 @@
 // Canvas rendering
 // ============================================================
 
+function drawMapNotes(viewLeft, viewRight, viewTop, viewBottom) {
+        if (!Array.isArray(tableState.notes)) return;
+
+        tableState.notes.forEach(note => {
+            const noteX = Number(note.x) || 0;
+            const noteY = Number(note.y) || 0;
+            const label = String(note.label || '').trim();
+
+            if (noteX < viewLeft - 80 || noteX > viewRight + 80 || noteY < viewTop - 80 || noteY > viewBottom + 80) {
+                return;
+            }
+
+            if (label) {
+                ctx.save();
+                ctx.font = 'bold 16px monospace';
+                ctx.textBaseline = 'top';
+                const width = ctx.measureText(label).width;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+                ctx.fillRect(noteX + 10, noteY - 8, width + 8, 22);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(noteX + 10, noteY - 8, width + 8, 22);
+                ctx.fillStyle = '#fff';
+                ctx.fillText(label, noteX + 14, noteY - 5);
+                ctx.restore();
+            }
+
+            if (tableState.isDM && notesVisible) {
+                ctx.save();
+                ctx.font = 'bold 26px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ff3333';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.strokeText('!', noteX, noteY);
+                ctx.fillText('!', noteX, noteY);
+                ctx.restore();
+            }
+        });
+    }
+
 async function draw() {
         ctx.fillStyle = '#000000'; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -52,6 +94,9 @@ async function draw() {
             }
             ctx.restore();
         }
+
+
+        drawMapNotes(viewLeft, viewRight, viewTop, viewBottom);
 
 
         if (tableState.fowEnabled) {

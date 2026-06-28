@@ -15,6 +15,7 @@ let tableState = {
     isDM: false,
     mapSrc: null,
     tokens: [],
+    notes: [],
     camera: { x: 0, y: 0, zoom: 1 },
     fowEnabled: false,
     fowPolygons: [],
@@ -41,6 +42,10 @@ let gmRoomMode = "create";
 let hasReceivedInitialTokenSync = false;
 let hasReceivedInitialFoWSync = false;
 let hasReceivedInitialMapSync = false;
+let hasReceivedInitialNotesSync = false;
+let notesVisible = false;
+let openNoteId = null;
+let pendingNoteWorldPosition = null;
 
 const canvas = document.getElementById('vtt-canvas');
 const ctx = canvas.getContext('2d');

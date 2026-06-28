@@ -10,6 +10,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     hasReceivedInitialTokenSync = false;
     hasReceivedInitialFoWSync = false;
     hasReceivedInitialMapSync = false;
+    hasReceivedInitialNotesSync = false;
 
     if (socket) {
         socket.disconnect();
@@ -311,6 +312,23 @@ function initHybridMediaVttStack(roomName, playerName) {
             }
 
             if (tableState.isDM) updateFogUI();
+            draw();
+        });
+
+        socket.on('syncNotes', (incomingNotes) => {
+            const serverNotes = Array.isArray(incomingNotes) ? incomingNotes : [];
+            const hasLocalNotes = Array.isArray(tableState.notes) && tableState.notes.length > 0;
+
+            // Reconnect safety: if the GM has local note work, do not let a stale
+            // server snapshot erase it after a brief websocket reconnect.
+            if (tableState.isDM && hasReceivedInitialNotesSync && hasLocalNotes) {
+                console.warn("DEBUG: Ignoring syncNotes after GM reconnect to protect local notes state.");
+                broadcastNotes();
+                return;
+            }
+
+            hasReceivedInitialNotesSync = true;
+            tableState.notes = serverNotes;
             draw();
         });
 

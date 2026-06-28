@@ -9,6 +9,30 @@ let isDraggingWorkspace = false;
 let dragStart = { x: 0, y: 0 };
 let selectedToken = null;
 
+function getWorldPointFromMouseEvent(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            rect,
+            worldX: (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom,
+            worldY: (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom
+        };
+    }
+
+function findNoteAt(worldX, worldY) {
+        if (!tableState.isDM || !notesVisible || !Array.isArray(tableState.notes)) return null;
+
+        for (let i = tableState.notes.length - 1; i >= 0; i--) {
+            const note = tableState.notes[i];
+            const noteX = Number(note.x) || 0;
+            const noteY = Number(note.y) || 0;
+            if (Math.hypot(noteX - worldX, noteY - worldY) < (18 / tableState.camera.zoom)) {
+                return note;
+            }
+        }
+
+        return null;
+    }
+
 
     canvas.addEventListener('contextmenu', (e) => {
         if (!tableState.isDM) return; 
@@ -44,6 +68,15 @@ let selectedToken = null;
         const rect = canvas.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
+
+
+        const clickedNote = findNoteAt(worldX, worldY);
+        if (clickedNote) {
+            openNoteEditor(clickedNote, worldX, worldY, e.clientX, e.clientY);
+            isDraggingWorkspace = false;
+            selectedToken = null;
+            return;
+        }
 
 
         if (tableState.isDM && isDrawingFoW && e.button === 0) {
@@ -116,6 +149,22 @@ let selectedToken = null;
     window.addEventListener('mouseup', () => {
         if (selectedToken) broadcastTokensMatrixChange();
         isDraggingWorkspace = false; selectedToken = null;
+    });
+
+
+    canvas.addEventListener('dblclick', (e) => {
+        if (!tableState.isDM || !notesVisible || isDrawingFoW) return;
+
+        const { worldX, worldY } = getWorldPointFromMouseEvent(e);
+
+        for (let i = tableState.tokens.length - 1; i >= 0; i--) {
+            const t = tableState.tokens[i];
+            if (Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2) return;
+        }
+
+        if (findNoteAt(worldX, worldY)) return;
+
+        openNoteEditor(null, worldX, worldY, e.clientX, e.clientY);
     });
 
 

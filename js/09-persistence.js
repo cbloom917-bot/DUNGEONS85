@@ -45,6 +45,7 @@ async function importD85Module(file) {
             );
 
             tableState = JSON.parse(decompressed);
+            if (!Array.isArray(tableState.notes)) tableState.notes = [];
 
             const imagePromises = [];
 

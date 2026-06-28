@@ -28,6 +28,7 @@ function broadcastFullTableState() {
 
         broadcastTokensMatrixChange();
         broadcastFoW();
+        broadcastNotes();
     }
 
 function toggleFogMode() {
@@ -117,3 +118,124 @@ function broadcastTokensMatrixChange() {
 
 
 
+
+
+function sanitizeNotesForBroadcast() {
+    if (!Array.isArray(tableState.notes)) tableState.notes = [];
+
+    return tableState.notes.map(note => ({
+        id: String(note.id),
+        x: Number(note.x) || 0,
+        y: Number(note.y) || 0,
+        label: String(note.label || '').substring(0, 40),
+        body: String(note.body || '').substring(0, 1000)
+    }));
+}
+
+function broadcastNotes() {
+    if (!tableState.isDM || !socket) return;
+    socket.emit('updateNotes', sanitizeNotesForBroadcast());
+}
+
+function toggleNotesVisibility() {
+    if (!tableState.isDM) return;
+    notesVisible = !notesVisible;
+    updateNotesToggleUI();
+    closeNoteEditor(false);
+    draw();
+}
+
+function updateNotesToggleUI() {
+    const btn = document.getElementById('btn-notes-toggle');
+    if (!btn) return;
+
+    btn.innerText = notesVisible ? 'HIDE NOTES' : 'SHOW NOTES';
+
+    if (notesVisible) {
+        btn.style.background = '#fff';
+        btn.style.color = '#000';
+    } else {
+        btn.style.background = '#000';
+        btn.style.color = '#fff';
+    }
+}
+
+function openNoteEditor(note, worldX, worldY, screenX, screenY) {
+    if (!tableState.isDM || !notesVisible) return;
+
+    const editor = document.getElementById('note-editor');
+    const labelInput = document.getElementById('note-label-input');
+    const bodyInput = document.getElementById('note-body-input');
+    const deleteBtn = document.getElementById('btn-note-delete');
+
+    if (!editor || !labelInput || !bodyInput || !deleteBtn) return;
+
+    openNoteId = note ? note.id : null;
+    pendingNoteWorldPosition = note ? null : { x: worldX, y: worldY };
+
+    labelInput.value = note ? (note.label || '') : '';
+    bodyInput.value = note ? (note.body || '') : '';
+    deleteBtn.style.display = note ? 'block' : 'none';
+
+    editor.style.left = `${Math.min(screenX, window.innerWidth - 260)}px`;
+    editor.style.top = `${Math.min(screenY, window.innerHeight - 220)}px`;
+    editor.classList.remove('hidden');
+    labelInput.focus();
+}
+
+function closeNoteEditor(redraw = true) {
+    const editor = document.getElementById('note-editor');
+    if (editor) editor.classList.add('hidden');
+
+    openNoteId = null;
+    pendingNoteWorldPosition = null;
+
+    if (redraw) draw();
+}
+
+function saveOpenNote() {
+    if (!tableState.isDM) return;
+
+    const labelInput = document.getElementById('note-label-input');
+    const bodyInput = document.getElementById('note-body-input');
+    if (!labelInput || !bodyInput) return;
+
+    const label = labelInput.value.trim().substring(0, 40);
+    const body = bodyInput.value.trim().substring(0, 1000);
+
+    if (!body && !label) {
+        closeNoteEditor();
+        return;
+    }
+
+    if (!Array.isArray(tableState.notes)) tableState.notes = [];
+
+    if (openNoteId) {
+        const note = tableState.notes.find(n => n.id === openNoteId);
+        if (note) {
+            note.label = label;
+            note.body = body;
+        }
+    } else if (pendingNoteWorldPosition) {
+        tableState.notes.push({
+            id: `note-${Date.now()}-${Math.random()}`,
+            x: pendingNoteWorldPosition.x,
+            y: pendingNoteWorldPosition.y,
+            label,
+            body
+        });
+    }
+
+    closeNoteEditor(false);
+    broadcastNotes();
+    draw();
+}
+
+function deleteOpenNote() {
+    if (!tableState.isDM || !openNoteId || !Array.isArray(tableState.notes)) return;
+
+    tableState.notes = tableState.notes.filter(note => note.id !== openNoteId);
+    closeNoteEditor(false);
+    broadcastNotes();
+    draw();
+}
