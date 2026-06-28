@@ -146,21 +146,15 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             playersArray.forEach(p => {
-                const videoBox = ensureVideoSeat(p.peerId, p.name, p.isDM);
-                if (videoBox) {
-                    videoBox.dataset.name = p.name || 'Player';
-                    videoBox.dataset.isDm = p.isDM ? 'true' : 'false';
-                    setupVideoBoxInitiative(videoBox);
-
-                    const label = document.getElementById(`label-${p.peerId}`);
-                    if (label) label.innerText = p.name || 'Player';
-                }
+                if (p.peerId === peerId) return;
+                ensurePlayerVideoSeat(p);
             });
 
             playersArray.forEach(p => {
                 const wasKnown = previousPlayers.some(existing => existing.peerId === p.peerId);
 
                 if (p.peerId !== peerId && !wasKnown && localStream) {
+                    ensurePlayerVideoSeat(p);
                     const call = peer.call(p.peerId, localStream);
 
                     call.on('stream', (remoteStream) => {
@@ -180,6 +174,13 @@ function initHybridMediaVttStack(roomName, playerName) {
         peer.on('call', (call) => {
             console.log("DEBUG: Incoming PeerJS call from", call.peer);
 
+            const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
+            ensurePlayerVideoSeat({
+                peerId: call.peer,
+                name: caller ? caller.name : 'Player',
+                isDM: caller ? caller.isDM : false
+            });
+
             if (!localStream) {
                 console.warn("DEBUG: No local stream available to answer call");
                 return;
@@ -188,7 +189,6 @@ function initHybridMediaVttStack(roomName, playerName) {
             call.answer(localStream);
 
             call.on('stream', (remoteStream) => {
-                const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
                 const displayName = caller ? caller.name : "Player";
                 addVideoFeed(remoteStream, call.peer, displayName, caller ? caller.isDM : false);
             });

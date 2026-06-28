@@ -9,20 +9,15 @@ function getLocalVideoContainer() {
     return document.getElementById('local-video-container');
 }
 
-function getMediaStatusMessages(box) {
-    if (!box) return [];
+function updateLocalMediaStatusBox() {
+    const box = getLocalVideoContainer();
+    if (!box) return;
 
     const messages = [];
     if (box.dataset.micStatus) messages.push(box.dataset.micStatus);
     if (box.dataset.camStatus) messages.push(box.dataset.camStatus);
-    return messages;
-}
 
-function updateMediaStatusBox(box) {
-    if (!box) return;
-
-    const messages = getMediaStatusMessages(box);
-    let status = box.querySelector('.media-presence-status');
+    let status = document.getElementById('local-media-status');
 
     if (!messages.length) {
         if (status) status.remove();
@@ -31,75 +26,49 @@ function updateMediaStatusBox(box) {
 
     if (!status) {
         status = document.createElement('div');
-        status.className = 'media-presence-status';
+        status.id = 'local-media-status';
+        status.style.position = 'absolute';
+        status.style.left = '0';
+        status.style.right = '0';
+        status.style.bottom = '0';
+        status.style.padding = '6px 8px';
+        status.style.background = 'rgba(0, 0, 0, 0.82)';
+        status.style.color = '#fff';
+        status.style.fontSize = '11px';
+        status.style.fontWeight = 'bold';
+        status.style.textAlign = 'center';
+        status.style.letterSpacing = '0.04em';
+        status.style.zIndex = '5';
+        status.style.pointerEvents = 'none';
+
+        if (getComputedStyle(box).position === 'static') {
+            box.style.position = 'relative';
+        }
+
         box.appendChild(status);
     }
 
     status.innerText = messages.join(" | ");
 }
 
-function showMediaStatus(box, kind, message) {
+function showLocalMediaStatus(kind, message) {
+    const box = getLocalVideoContainer();
     if (!box) return;
 
     if (kind === "mic") box.dataset.micStatus = message;
     if (kind === "cam") box.dataset.camStatus = message;
 
-    updateMediaStatusBox(box);
+    updateLocalMediaStatusBox();
 }
 
-function clearMediaStatus(box, kind) {
+function clearLocalMediaStatus(kind) {
+    const box = getLocalVideoContainer();
     if (!box) return;
 
     if (!kind || kind === "mic") delete box.dataset.micStatus;
     if (!kind || kind === "cam") delete box.dataset.camStatus;
 
-    updateMediaStatusBox(box);
-}
-
-function updateLocalMediaStatusBox() {
-    updateMediaStatusBox(getLocalVideoContainer());
-}
-
-function showLocalMediaStatus(kind, message) {
-    showMediaStatus(getLocalVideoContainer(), kind, message);
-}
-
-function clearLocalMediaStatus(kind) {
-    clearMediaStatus(getLocalVideoContainer(), kind);
-}
-
-function updateRemoteMediaPresence(box, stream) {
-    if (!box) return;
-
-    const audioTracks = stream ? stream.getAudioTracks() : [];
-    const videoTracks = stream ? stream.getVideoTracks() : [];
-
-    if (audioTracks.length) {
-        clearMediaStatus(box, "mic");
-    } else {
-        showMediaStatus(box, "mic", "MUTED");
-    }
-
-    if (videoTracks.length) {
-        clearMediaStatus(box, "cam");
-    } else {
-        showMediaStatus(box, "cam", "CAM OFF");
-    }
-}
-
-function ensureVideoSeat(peerId, characterName, isDM = false) {
-    if (!peerId) return null;
-
-    const localBox = getLocalVideoContainer();
-    if (peerId === localPeerId && localBox) {
-        localBox.dataset.peerId = peerId;
-        localBox.dataset.name = characterName || tableState.playerName || 'You';
-        localBox.dataset.isDm = isDM ? 'true' : 'false';
-        setupVideoBoxInitiative(localBox);
-        return localBox;
-    }
-
-    return addVideoFeed(null, peerId, characterName, isDM);
+    updateLocalMediaStatusBox();
 }
 
 async function setupCameraAndVideo() {
@@ -125,8 +94,8 @@ async function setupCameraAndVideo() {
         camBtn.classList.add('muted-state');
     }
 
-    showLocalMediaStatus("mic", "MUTED");
-    showLocalMediaStatus("cam", "CAM OFF");
+    showLocalMediaStatus("mic", "MIC OFF");
+    showLocalMediaStatus("cam", "CAMERA OFF");
 
     console.log("DEBUG: Joined with media off by default.");
 }
@@ -151,6 +120,97 @@ function refreshPeerMediaConnections() {
             console.error("DEBUG: Failed to refresh PeerJS media connection:", err);
         }
     });
+}
+
+
+function updateRemoteMediaStatusBox(box, messages) {
+    if (!box) return;
+
+    let status = box.querySelector('.remote-media-status');
+
+    if (!messages.length) {
+        if (status) status.remove();
+        return;
+    }
+
+    if (!status) {
+        status = document.createElement('div');
+        status.className = 'remote-media-status';
+        box.appendChild(status);
+    }
+
+    status.innerText = messages.join(" | ");
+}
+
+function refreshRemoteMediaStatus(box, stream) {
+    if (!box) return;
+
+    const messages = [];
+    const audioTracks = stream && typeof stream.getAudioTracks === 'function' ? stream.getAudioTracks() : [];
+    const videoTracks = stream && typeof stream.getVideoTracks === 'function' ? stream.getVideoTracks() : [];
+    const hasLiveAudio = audioTracks.some(track => track.enabled && track.readyState !== 'ended');
+    const hasLiveVideo = videoTracks.some(track => track.enabled && track.readyState !== 'ended');
+
+    if (!hasLiveAudio) messages.push('MUTED');
+    if (!hasLiveVideo) messages.push('CAM OFF');
+
+    updateRemoteMediaStatusBox(box, messages);
+}
+
+function ensurePlayerVideoSeat(player) {
+    if (!player || !player.peerId || player.peerId === localPeerId) return null;
+
+    const peerId = player.peerId;
+    const characterName = player.name || 'Player';
+    const isDM = !!player.isDM;
+
+    let box = document.getElementById(`video-${peerId}`);
+
+    if (box) {
+        box.dataset.name = characterName;
+        box.dataset.isDm = isDM ? 'true' : 'false';
+
+        const label = document.getElementById(`label-${peerId}`);
+        if (label) label.innerText = characterName;
+
+        setupVideoBoxInitiative(box);
+        refreshRemoteMediaStatus(box, box.querySelector('video')?.srcObject || null);
+        return box;
+    }
+
+    const ribbon = document.querySelector('.video-ribbon');
+    if (!ribbon) return null;
+
+    box = document.createElement('div');
+    box.className = 'video-box';
+    box.id = `video-${peerId}`;
+    box.dataset.peerId = peerId;
+    box.dataset.name = characterName;
+    box.dataset.isDm = isDM ? 'true' : 'false';
+
+    const videoEl = document.createElement('video');
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.muted = false;
+
+    const label = document.createElement('div');
+    label.className = 'video-label';
+    label.id = `label-${peerId}`;
+    label.innerText = characterName;
+
+    box.appendChild(videoEl);
+    box.appendChild(label);
+    ribbon.appendChild(box);
+
+    setupVideoBoxInitiative(box);
+    refreshRemoteMediaStatus(box, null);
+    sortVideoRibbon();
+
+    if (initiativePeerId) {
+        setInitiativeSpotlight(initiativePeerId);
+    }
+
+    return box;
 }
 
 function sortPlayersForRibbon(players) {
@@ -380,57 +440,20 @@ function applyVideoOrder(peerOrder) {
 }
 
 function addVideoFeed(stream, peerId, characterName, isDM = false) {
-    const existingBox = document.getElementById(`video-${peerId}`);
-    if (existingBox) {
-        existingBox.dataset.name = characterName || 'Player';
-        existingBox.dataset.isDm = isDM ? 'true' : 'false';
+    const box = ensurePlayerVideoSeat({
+        peerId,
+        name: characterName || 'Player',
+        isDM
+    });
 
-        const existingVideo = existingBox.querySelector('video');
-        if (existingVideo && stream) {
-            existingVideo.srcObject = stream;
-        }
+    if (!box) return;
 
-        const existingLabel = existingBox.querySelector('.video-label');
-        if (existingLabel) existingLabel.innerText = characterName || 'Player';
-
-        updateRemoteMediaPresence(existingBox, stream || (existingVideo ? existingVideo.srcObject : null));
-        setupVideoBoxInitiative(existingBox);
-        sortVideoRibbon();
-        return existingBox;
+    const videoEl = box.querySelector('video');
+    if (videoEl && stream) {
+        videoEl.srcObject = stream;
     }
 
-    const ribbon = document.querySelector('.video-ribbon');
-    if (!ribbon) return null;
-
-    const box = document.createElement('div');
-    box.className = 'video-box';
-    box.id = `video-${peerId}`;
-    box.dataset.peerId = peerId;
-    box.dataset.name = characterName || 'Player';
-    box.dataset.isDm = isDM ? 'true' : 'false';
-
-    const videoEl = document.createElement('video');
-    videoEl.srcObject = stream || null;
-    videoEl.autoplay = true;
-    videoEl.playsInline = true;
-    videoEl.muted = false;
-
-    const label = document.createElement('div');
-    label.className = 'video-label';
-    label.id = `label-${peerId}`;
-    label.innerText = characterName || 'Player Connected';
-
-    box.appendChild(videoEl);
-    box.appendChild(label);
-    ribbon.appendChild(box);
-
-    updateRemoteMediaPresence(box, stream);
+    refreshRemoteMediaStatus(box, stream);
     setupVideoBoxInitiative(box);
     sortVideoRibbon();
-
-    if (initiativePeerId) {
-        setInitiativeSpotlight(initiativePeerId);
-    }
-
-    return box;
 }
