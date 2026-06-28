@@ -33,9 +33,11 @@ function exportTableState() {
 async function importD85Module(file) {
     if (!file) return;
 
-    document.getElementById('loading-overlay').style.display = 'flex';
+    showDungeonLoadingOverlay();
+    if (socket) socket.emit('dungeonLoadStart');
 
     const reader = new FileReader();
+    let notifiedLoadComplete = false;
 
     reader.onload = async (e) => {
         try {
@@ -67,12 +69,15 @@ async function importD85Module(file) {
 
             draw();
 
+            if (socket) socket.emit('dungeonLoadComplete');
+            notifiedLoadComplete = true;
             alert(".d85 File loaded successfully!");
         } catch (err) {
             console.error("D85 Import Error:", err);
             alert("Invalid .d85 file.");
         } finally {
-            document.getElementById('loading-overlay').style.display = 'none';
+            if (socket && !notifiedLoadComplete) socket.emit('dungeonLoadComplete');
+            hideLoading();
         }
     };
 
