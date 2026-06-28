@@ -9,15 +9,20 @@ function getLocalVideoContainer() {
     return document.getElementById('local-video-container');
 }
 
-function updateLocalMediaStatusBox() {
-    const box = getLocalVideoContainer();
-    if (!box) return;
+function getMediaStatusMessages(box) {
+    if (!box) return [];
 
     const messages = [];
     if (box.dataset.micStatus) messages.push(box.dataset.micStatus);
     if (box.dataset.camStatus) messages.push(box.dataset.camStatus);
+    return messages;
+}
 
-    let status = document.getElementById('local-media-status');
+function updateMediaStatusBox(box) {
+    if (!box) return;
+
+    const messages = getMediaStatusMessages(box);
+    let status = box.querySelector('.media-presence-status');
 
     if (!messages.length) {
         if (status) status.remove();
@@ -26,49 +31,75 @@ function updateLocalMediaStatusBox() {
 
     if (!status) {
         status = document.createElement('div');
-        status.id = 'local-media-status';
-        status.style.position = 'absolute';
-        status.style.left = '0';
-        status.style.right = '0';
-        status.style.bottom = '0';
-        status.style.padding = '6px 8px';
-        status.style.background = 'rgba(0, 0, 0, 0.82)';
-        status.style.color = '#fff';
-        status.style.fontSize = '11px';
-        status.style.fontWeight = 'bold';
-        status.style.textAlign = 'center';
-        status.style.letterSpacing = '0.04em';
-        status.style.zIndex = '5';
-        status.style.pointerEvents = 'none';
-
-        if (getComputedStyle(box).position === 'static') {
-            box.style.position = 'relative';
-        }
-
+        status.className = 'media-presence-status';
         box.appendChild(status);
     }
 
     status.innerText = messages.join(" | ");
 }
 
-function showLocalMediaStatus(kind, message) {
-    const box = getLocalVideoContainer();
+function showMediaStatus(box, kind, message) {
     if (!box) return;
 
     if (kind === "mic") box.dataset.micStatus = message;
     if (kind === "cam") box.dataset.camStatus = message;
 
-    updateLocalMediaStatusBox();
+    updateMediaStatusBox(box);
 }
 
-function clearLocalMediaStatus(kind) {
-    const box = getLocalVideoContainer();
+function clearMediaStatus(box, kind) {
     if (!box) return;
 
     if (!kind || kind === "mic") delete box.dataset.micStatus;
     if (!kind || kind === "cam") delete box.dataset.camStatus;
 
-    updateLocalMediaStatusBox();
+    updateMediaStatusBox(box);
+}
+
+function updateLocalMediaStatusBox() {
+    updateMediaStatusBox(getLocalVideoContainer());
+}
+
+function showLocalMediaStatus(kind, message) {
+    showMediaStatus(getLocalVideoContainer(), kind, message);
+}
+
+function clearLocalMediaStatus(kind) {
+    clearMediaStatus(getLocalVideoContainer(), kind);
+}
+
+function updateRemoteMediaPresence(box, stream) {
+    if (!box) return;
+
+    const audioTracks = stream ? stream.getAudioTracks() : [];
+    const videoTracks = stream ? stream.getVideoTracks() : [];
+
+    if (audioTracks.length) {
+        clearMediaStatus(box, "mic");
+    } else {
+        showMediaStatus(box, "mic", "MUTED");
+    }
+
+    if (videoTracks.length) {
+        clearMediaStatus(box, "cam");
+    } else {
+        showMediaStatus(box, "cam", "CAM OFF");
+    }
+}
+
+function ensureVideoSeat(peerId, characterName, isDM = false) {
+    if (!peerId) return null;
+
+    const localBox = getLocalVideoContainer();
+    if (peerId === localPeerId && localBox) {
+        localBox.dataset.peerId = peerId;
+        localBox.dataset.name = characterName || tableState.playerName || 'You';
+        localBox.dataset.isDm = isDM ? 'true' : 'false';
+        setupVideoBoxInitiative(localBox);
+        return localBox;
+    }
+
+    return addVideoFeed(null, peerId, characterName, isDM);
 }
 
 async function setupCameraAndVideo() {
@@ -94,8 +125,8 @@ async function setupCameraAndVideo() {
         camBtn.classList.add('muted-state');
     }
 
-    showLocalMediaStatus("mic", "MIC OFF");
-    showLocalMediaStatus("cam", "CAMERA OFF");
+    showLocalMediaStatus("mic", "MUTED");
+    showLocalMediaStatus("cam", "CAM OFF");
 
     console.log("DEBUG: Joined with media off by default.");
 }
@@ -359,13 +390,17 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
             existingVideo.srcObject = stream;
         }
 
+        const existingLabel = existingBox.querySelector('.video-label');
+        if (existingLabel) existingLabel.innerText = characterName || 'Player';
+
+        updateRemoteMediaPresence(existingBox, stream || (existingVideo ? existingVideo.srcObject : null));
         setupVideoBoxInitiative(existingBox);
         sortVideoRibbon();
-        return;
+        return existingBox;
     }
 
     const ribbon = document.querySelector('.video-ribbon');
-    if (!ribbon) return;
+    if (!ribbon) return null;
 
     const box = document.createElement('div');
     box.className = 'video-box';
@@ -375,7 +410,7 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
     box.dataset.isDm = isDM ? 'true' : 'false';
 
     const videoEl = document.createElement('video');
-    videoEl.srcObject = stream;
+    videoEl.srcObject = stream || null;
     videoEl.autoplay = true;
     videoEl.playsInline = true;
     videoEl.muted = false;
@@ -389,10 +424,13 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
     box.appendChild(label);
     ribbon.appendChild(box);
 
+    updateRemoteMediaPresence(box, stream);
     setupVideoBoxInitiative(box);
     sortVideoRibbon();
 
     if (initiativePeerId) {
         setInitiativeSpotlight(initiativePeerId);
     }
+
+    return box;
 }

@@ -146,11 +146,12 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             playersArray.forEach(p => {
-                const existingVideoBox = document.getElementById(`video-${p.peerId}`);
-                if (existingVideoBox) {
-                    existingVideoBox.dataset.name = p.name || 'Player';
-                    existingVideoBox.dataset.isDm = p.isDM ? 'true' : 'false';
-                    setupVideoBoxInitiative(existingVideoBox);
+                const videoBox = ensureVideoSeat(p.peerId, p.name, p.isDM);
+                if (videoBox) {
+                    videoBox.dataset.name = p.name || 'Player';
+                    videoBox.dataset.isDm = p.isDM ? 'true' : 'false';
+                    setupVideoBoxInitiative(videoBox);
+
                     const label = document.getElementById(`label-${p.peerId}`);
                     if (label) label.innerText = p.name || 'Player';
                 }
