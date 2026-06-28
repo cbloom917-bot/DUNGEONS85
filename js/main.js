@@ -37,6 +37,7 @@ let contextSelectedToken = null;
 let gmRoomMode = "create";
 let hasReceivedInitialTokenSync = false;
 let hasReceivedInitialFoWSync = false;
+let hasReceivedInitialMapSync = false;
 
 const canvas = document.getElementById('vtt-canvas');
 const ctx = canvas.getContext('2d');
@@ -318,6 +319,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
     hasReceivedInitialTokenSync = false;
     hasReceivedInitialFoWSync = false;
+    hasReceivedInitialMapSync = false;
 
     if (socket) {
         socket.disconnect();
@@ -506,6 +508,19 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncMap', (mapSrc) => {
+            if (typeof mapSrc !== 'string') return;
+
+            // Reconnect safety: if the GM has already received initial map state
+            // and still has a local map loaded, do not let a stale server snapshot
+            // roll the table back to a previous map after a brief websocket reconnect.
+            // Re-publish the GM's current local map instead.
+            if (tableState.isDM && hasReceivedInitialMapSync && tableState.mapSrc) {
+                console.warn("DEBUG: Ignoring syncMap after GM reconnect to protect local map state.");
+                socket.emit('updateMapImage', tableState.mapSrc);
+                return;
+            }
+
+            hasReceivedInitialMapSync = true;
             tableState.mapSrc = mapSrc;
             loadCloudImage(mapSrc).then(() => draw());
         });
