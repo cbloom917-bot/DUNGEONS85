@@ -32,7 +32,7 @@
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title">VERSION 9.6.2 PUBLIC BETA</div>
+            <div class="login-title" id="version-display">VERSION PUBLIC BETA</div>
             <div class="toggle-container">
     			<button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false);">PLAYER (JOIN)</button>
     			<button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true);">GM (HOST)</button>
@@ -93,6 +93,7 @@
         <button onclick="toggleTurnTracker()" class="tool-btn">Turn Tracker</button>
         <button onclick="toggleFogPanel()" class="tool-btn">Fog of War</button>
         <button onclick="forcePlayerFocus()" class="tool-btn">Focus View</button>
+        <button onclick="toggleNotesVisibility()" id="btn-notes-toggle" class="tool-btn">SHOW NOTES</button>
 
 
         <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
@@ -161,6 +162,20 @@
     </div>
 
 
+    <div id="note-editor" class="note-editor hidden">
+        <div class="panel-label">:: Map Note ::</div>
+        <label for="note-label-input">Label (players see this)</label>
+        <input type="text" id="note-label-input" class="note-input" maxlength="40">
+        <label for="note-body-input">GM Note</label>
+        <textarea id="note-body-input" class="note-textarea" maxlength="1000"></textarea>
+        <div class="note-editor-actions">
+            <button type="button" onclick="saveOpenNote()" class="tool-btn">Save</button>
+            <button type="button" onclick="deleteOpenNote()" id="btn-note-delete" class="tool-btn danger">Delete</button>
+            <button type="button" onclick="closeNoteEditor(false)" class="tool-btn">Cancel</button>
+        </div>
+    </div>
+
+
     <div id="ticker-log" class="dice-history-ticker">
         <div class="ticker-entry" id="ticker-empty-msg" style="color: #444; border: none;">[ Log Empty ]</div>
     </div>
@@ -190,5 +205,6 @@
 <script src="js/07-tools.js"></script>
 <script src="js/08-media-video.js"></script>
 <script src="js/09-persistence.js"></script>
+<script src="js/10-version.js"></script>
 </body>
 </html>

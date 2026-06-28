@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const pkg = require('./package.json');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,9 +21,47 @@ const io = new Server(server, {
     pingTimeout: 60000 
 });
 
+app.get('/version', (req, res) => {
+    res.json({ version: pkg.version });
+});
+
 app.use(express.static(__dirname));
 
 const roomCampaignStates = {};
+
+function sanitizeNote(note) {
+    if (!note || typeof note !== 'object') return null;
+
+    return {
+        id: String(note.id || `note-${Date.now()}-${Math.random()}`),
+        x: Number(note.x) || 0,
+        y: Number(note.y) || 0,
+        label: String(note.label || '').substring(0, 40),
+        body: String(note.body || '').substring(0, 1000)
+    };
+}
+
+function getPublicNotes(notes) {
+    return (Array.isArray(notes) ? notes : [])
+        .filter(note => note && String(note.label || '').trim())
+        .map(note => ({
+            id: String(note.id),
+            x: Number(note.x) || 0,
+            y: Number(note.y) || 0,
+            label: String(note.label || '').substring(0, 40),
+            body: ''
+        }));
+}
+
+function emitNotesToRoom(roomName) {
+    const state = roomCampaignStates[roomName];
+    if (!state) return;
+
+    state.players.forEach(player => {
+        const payload = player.isDM ? state.notes : getPublicNotes(state.notes);
+        io.to(player.socketId).emit('syncNotes', payload);
+    });
+}
 
 io.on('connection', (socket) => {
     let currentRoom = null;
@@ -56,6 +95,7 @@ io.on('connection', (socket) => {
                 fowEnabled: false, 
                 fowPolygons: [],
                 isDarknessActive: false,
+                notes: [],
                 initiativePeerId: null,
                 videoOrder: []
             };
@@ -87,6 +127,7 @@ io.on('connection', (socket) => {
             polygons: state.fowPolygons, 
             darkness: state.isDarknessActive 
         });
+        socket.emit('syncNotes', isDM ? state.notes : getPublicNotes(state.notes));
 
         socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
         socket.emit('syncVideoOrder', state.videoOrder || []);
@@ -152,6 +193,24 @@ io.on('connection', (socket) => {
         
         roomCampaignStates[currentRoom].mapSrc = mapSrcString;
         socket.to(currentRoom).emit('syncMap', mapSrcString);
+    });
+
+    socket.on('updateNotes', (notes) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!Array.isArray(notes)) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+
+        // Only the GM can create, edit, delete, or broadcast private map notes.
+        if (!player || !player.isDM) return;
+
+        state.notes = notes
+            .map(sanitizeNote)
+            .filter(Boolean)
+            .slice(0, 500);
+
+        emitNotesToRoom(currentRoom);
     });
 
     socket.on('executeDiceRoll', (rollData) => {
