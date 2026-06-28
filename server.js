@@ -15,7 +15,9 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     },
     maxHttpBufferSize: 1e8,
-    transports: ['websocket'] 
+    transports: ['websocket'],
+    pingInterval: 25000,
+    pingTimeout: 60000 
 });
 
 app.use(express.static(__dirname));
@@ -92,7 +94,7 @@ io.on('connection', (socket) => {
         io.to(currentRoom).emit('updatePlayerList', state.players);
 
         const entryMsg = isDM
-            ? (roomAlreadyExisted ? `${playerName} HAS REJOINED THE TABLE` : `${playerName} HAS CREATED THE TABLE`)
+            ? `${playerName} HAS CREATED THE TABLE`
             : `${playerName} HAS JOINED THE TABLE`;
 
         io.to(currentRoom).emit('playerNotification', entryMsg);
