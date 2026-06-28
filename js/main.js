@@ -307,10 +307,11 @@ async function toggleLocalAudio() {
             } else {
                 showLocalMediaStatus("mic", "MIC OFF");
             }
+
+            refreshPeerMediaConnections();
             return;
         }
 
-        // If the user joined without a microphone, Unmute asks for mic permission later.
         try {
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             const audioTrack = micStream.getAudioTracks()[0];
@@ -327,10 +328,11 @@ async function toggleLocalAudio() {
                 }
 
                 clearLocalMediaStatus("mic");
-                console.log("DEBUG: Microphone permission granted after join.");
+                console.log("DEBUG: Microphone permission granted on demand.");
+                refreshPeerMediaConnections();
             }
         } catch (err) {
-            console.warn("DEBUG: Microphone access denied after join:", err);
+            console.warn("DEBUG: Microphone access denied on demand:", err);
             showLocalMediaStatus("mic", "MIC BLOCKED — ENABLE IT IN BROWSER SETTINGS");
             if (btn) {
                 btn.innerText = "Unmute";
@@ -341,7 +343,9 @@ async function toggleLocalAudio() {
 
 
 async function toggleLocalVideo() {
-        if (!localStream) return;
+        if (!localStream) {
+            localStream = new MediaStream();
+        }
 
         const existingTrack = localStream.getVideoTracks()[0];
         const btn = document.getElementById('toggle-cam-btn');
@@ -358,10 +362,11 @@ async function toggleLocalVideo() {
             } else {
                 showLocalMediaStatus("cam", "CAMERA OFF");
             }
+
+            refreshPeerMediaConnections();
             return;
         }
 
-        // If the user joined audio-only, Cam On asks for camera permission later.
         try {
             const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             const videoTrack = cameraStream.getVideoTracks()[0];
@@ -378,10 +383,11 @@ async function toggleLocalVideo() {
                 }
 
                 clearLocalMediaStatus("cam");
-                console.log("DEBUG: Camera permission granted after join.");
+                console.log("DEBUG: Camera permission granted on demand.");
+                refreshPeerMediaConnections();
             }
         } catch (err) {
-            console.warn("DEBUG: Camera access denied after join:", err);
+            console.warn("DEBUG: Camera access denied on demand:", err);
             showLocalMediaStatus("cam", "CAMERA BLOCKED — ENABLE IT IN BROWSER SETTINGS");
             if (btn) {
                 btn.innerText = "Cam On";
@@ -1342,46 +1348,52 @@ function clearLocalMediaStatus(kind) {
 async function setupCameraAndVideo() {
     clearLocalMediaStatus();
 
+    // Join the table without requesting browser media permissions.
+    // Microphone and camera are requested later only when the user clicks
+    // Unmute or Cam On.
     localStream = new MediaStream();
-
-    try {
-        // Microphone is optional. If declined, the user still enters the table.
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        micStream.getAudioTracks().forEach(track => localStream.addTrack(track));
-        console.log("DEBUG: Microphone access granted.");
-        clearLocalMediaStatus("mic");
-    } catch (err) {
-        console.warn("DEBUG: Microphone access denied or unavailable:", err);
-        showLocalMediaStatus("mic", "MIC BLOCKED — ENABLE IT IN BROWSER SETTINGS");
-    }
-
-    try {
-        // Camera is optional. If declined, the user still enters the table.
-        const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        cameraStream.getVideoTracks().forEach(track => localStream.addTrack(track));
-        console.log("DEBUG: Camera access granted.");
-        clearLocalMediaStatus("cam");
-    } catch (err) {
-        console.warn("DEBUG: Camera access denied or unavailable:", err);
-        showLocalMediaStatus("cam", "CAMERA BLOCKED — ENABLE IT IN BROWSER SETTINGS");
-    }
 
     const localVideo = document.getElementById('local-video');
     if (localVideo) localVideo.srcObject = localStream;
 
     const micBtn = document.getElementById('toggle-mic-btn');
-    const hasMic = localStream.getAudioTracks().length > 0;
     if (micBtn) {
-        micBtn.innerText = hasMic ? "Mute" : "Unmute";
-        micBtn.classList.toggle('muted-state', !hasMic);
+        micBtn.innerText = "Unmute";
+        micBtn.classList.add('muted-state');
     }
 
     const camBtn = document.getElementById('toggle-cam-btn');
-    const hasCamera = localStream.getVideoTracks().length > 0;
     if (camBtn) {
-        camBtn.innerText = hasCamera ? "Cam Off" : "Cam On";
-        camBtn.classList.toggle('muted-state', !hasCamera);
+        camBtn.innerText = "Cam On";
+        camBtn.classList.add('muted-state');
     }
+
+    showLocalMediaStatus("mic", "MIC OFF");
+    showLocalMediaStatus("cam", "CAMERA OFF");
+
+    console.log("DEBUG: Joined with media off by default.");
+}
+
+function refreshPeerMediaConnections() {
+    if (!peer || !localStream || !Array.isArray(currentActiveRoomArray)) return;
+
+    currentActiveRoomArray.forEach(p => {
+        if (!p || !p.peerId || p.peerId === localPeerId) return;
+
+        try {
+            const call = peer.call(p.peerId, localStream);
+
+            call.on('stream', (remoteStream) => {
+                addVideoFeed(remoteStream, call.peer, p.name, p.isDM);
+            });
+
+            call.on('error', (err) => {
+                console.error("DEBUG: Media refresh PeerJS call error:", err);
+            });
+        } catch (err) {
+            console.error("DEBUG: Failed to refresh PeerJS media connection:", err);
+        }
+    });
 }
 
 function sortPlayersForRibbon(players) {
@@ -1615,6 +1627,12 @@ function addVideoFeed(stream, peerId, characterName, isDM = false) {
     if (existingBox) {
         existingBox.dataset.name = characterName || 'Player';
         existingBox.dataset.isDm = isDM ? 'true' : 'false';
+
+        const existingVideo = existingBox.querySelector('video');
+        if (existingVideo && stream) {
+            existingVideo.srcObject = stream;
+        }
+
         setupVideoBoxInitiative(existingBox);
         sortVideoRibbon();
         return;
