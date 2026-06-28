@@ -287,26 +287,106 @@ function forcePlayerFocus() {
     }
 
 
-function toggleLocalAudio() {
-        if (!localStream) return;
-        const track = localStream.getAudioTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            const btn = document.getElementById('toggle-mic-btn');
-            btn.innerText = track.enabled ? "Mute" : "Unmute";
-            btn.classList.toggle('muted-state', !track.enabled);
+async function toggleLocalAudio() {
+        if (!localStream) {
+            localStream = new MediaStream();
+        }
+
+        const existingTrack = localStream.getAudioTracks()[0];
+        const btn = document.getElementById('toggle-mic-btn');
+
+        if (existingTrack) {
+            existingTrack.enabled = !existingTrack.enabled;
+            if (btn) {
+                btn.innerText = existingTrack.enabled ? "Mute" : "Unmute";
+                btn.classList.toggle('muted-state', !existingTrack.enabled);
+            }
+
+            if (existingTrack.enabled) {
+                clearLocalMediaStatus("mic");
+            } else {
+                showLocalMediaStatus("mic", "MIC OFF");
+            }
+            return;
+        }
+
+        // If the user joined without a microphone, Unmute asks for mic permission later.
+        try {
+            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            const audioTrack = micStream.getAudioTracks()[0];
+
+            if (audioTrack) {
+                localStream.addTrack(audioTrack);
+
+                const localVideo = document.getElementById('local-video');
+                if (localVideo) localVideo.srcObject = localStream;
+
+                if (btn) {
+                    btn.innerText = "Mute";
+                    btn.classList.remove('muted-state');
+                }
+
+                clearLocalMediaStatus("mic");
+                console.log("DEBUG: Microphone permission granted after join.");
+            }
+        } catch (err) {
+            console.warn("DEBUG: Microphone access denied after join:", err);
+            showLocalMediaStatus("mic", "MIC BLOCKED — ENABLE IT IN BROWSER SETTINGS");
+            if (btn) {
+                btn.innerText = "Unmute";
+                btn.classList.add('muted-state');
+            }
         }
     }
 
 
-function toggleLocalVideo() {
+async function toggleLocalVideo() {
         if (!localStream) return;
-        const track = localStream.getVideoTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            const btn = document.getElementById('toggle-cam-btn');
-            btn.innerText = track.enabled ? "Cam Off" : "Cam On";
-            btn.classList.toggle('muted-state', !track.enabled);
+
+        const existingTrack = localStream.getVideoTracks()[0];
+        const btn = document.getElementById('toggle-cam-btn');
+
+        if (existingTrack) {
+            existingTrack.enabled = !existingTrack.enabled;
+            if (btn) {
+                btn.innerText = existingTrack.enabled ? "Cam Off" : "Cam On";
+                btn.classList.toggle('muted-state', !existingTrack.enabled);
+            }
+
+            if (existingTrack.enabled) {
+                clearLocalMediaStatus("cam");
+            } else {
+                showLocalMediaStatus("cam", "CAMERA OFF");
+            }
+            return;
+        }
+
+        // If the user joined audio-only, Cam On asks for camera permission later.
+        try {
+            const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            const videoTrack = cameraStream.getVideoTracks()[0];
+
+            if (videoTrack) {
+                localStream.addTrack(videoTrack);
+
+                const localVideo = document.getElementById('local-video');
+                if (localVideo) localVideo.srcObject = localStream;
+
+                if (btn) {
+                    btn.innerText = "Cam Off";
+                    btn.classList.remove('muted-state');
+                }
+
+                clearLocalMediaStatus("cam");
+                console.log("DEBUG: Camera permission granted after join.");
+            }
+        } catch (err) {
+            console.warn("DEBUG: Camera access denied after join:", err);
+            showLocalMediaStatus("cam", "CAMERA BLOCKED — ENABLE IT IN BROWSER SETTINGS");
+            if (btn) {
+                btn.innerText = "Cam On";
+                btn.classList.add('muted-state');
+            }
         }
     }
 
@@ -1193,19 +1273,114 @@ function resetTurns() {
 // Media and persistence
 // ============================================================
 
+function getLocalVideoContainer() {
+    return document.getElementById('local-video-container');
+}
+
+function updateLocalMediaStatusBox() {
+    const box = getLocalVideoContainer();
+    if (!box) return;
+
+    const messages = [];
+    if (box.dataset.micStatus) messages.push(box.dataset.micStatus);
+    if (box.dataset.camStatus) messages.push(box.dataset.camStatus);
+
+    let status = document.getElementById('local-media-status');
+
+    if (!messages.length) {
+        if (status) status.remove();
+        return;
+    }
+
+    if (!status) {
+        status = document.createElement('div');
+        status.id = 'local-media-status';
+        status.style.position = 'absolute';
+        status.style.left = '0';
+        status.style.right = '0';
+        status.style.bottom = '0';
+        status.style.padding = '6px 8px';
+        status.style.background = 'rgba(0, 0, 0, 0.82)';
+        status.style.color = '#fff';
+        status.style.fontSize = '11px';
+        status.style.fontWeight = 'bold';
+        status.style.textAlign = 'center';
+        status.style.letterSpacing = '0.04em';
+        status.style.zIndex = '5';
+        status.style.pointerEvents = 'none';
+
+        if (getComputedStyle(box).position === 'static') {
+            box.style.position = 'relative';
+        }
+
+        box.appendChild(status);
+    }
+
+    status.innerText = messages.join(" | ");
+}
+
+function showLocalMediaStatus(kind, message) {
+    const box = getLocalVideoContainer();
+    if (!box) return;
+
+    if (kind === "mic") box.dataset.micStatus = message;
+    if (kind === "cam") box.dataset.camStatus = message;
+
+    updateLocalMediaStatusBox();
+}
+
+function clearLocalMediaStatus(kind) {
+    const box = getLocalVideoContainer();
+    if (!box) return;
+
+    if (!kind || kind === "mic") delete box.dataset.micStatus;
+    if (!kind || kind === "cam") delete box.dataset.camStatus;
+
+    updateLocalMediaStatusBox();
+}
+
 async function setupCameraAndVideo() {
+    clearLocalMediaStatus();
+
+    localStream = new MediaStream();
+
     try {
-        // Request video and audio
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        
-        // Display local stream in the local video box
-        const localVideo = document.getElementById('local-video');
-        localVideo.srcObject = localStream;
-        console.log("DEBUG: Camera access granted.");
+        // Microphone is optional. If declined, the user still enters the table.
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micStream.getAudioTracks().forEach(track => localStream.addTrack(track));
+        console.log("DEBUG: Microphone access granted.");
+        clearLocalMediaStatus("mic");
     } catch (err) {
-        console.error("DEBUG: Camera access failed:", err);
-        alert("Camera/Mic access is required to see other players. Please allow permissions.");
-        throw err; // Stop execution if camera fails
+        console.warn("DEBUG: Microphone access denied or unavailable:", err);
+        showLocalMediaStatus("mic", "MIC BLOCKED — ENABLE IT IN BROWSER SETTINGS");
+    }
+
+    try {
+        // Camera is optional. If declined, the user still enters the table.
+        const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        cameraStream.getVideoTracks().forEach(track => localStream.addTrack(track));
+        console.log("DEBUG: Camera access granted.");
+        clearLocalMediaStatus("cam");
+    } catch (err) {
+        console.warn("DEBUG: Camera access denied or unavailable:", err);
+        showLocalMediaStatus("cam", "CAMERA BLOCKED — ENABLE IT IN BROWSER SETTINGS");
+    }
+
+    const localVideo = document.getElementById('local-video');
+    if (localVideo) localVideo.srcObject = localStream;
+
+    const micBtn = document.getElementById('toggle-mic-btn');
+    const hasMic = localStream.getAudioTracks().length > 0;
+    if (micBtn) {
+        micBtn.innerText = hasMic ? "Mute" : "Unmute";
+        micBtn.classList.toggle('muted-state', !hasMic);
+    }
+
+    const camBtn = document.getElementById('toggle-cam-btn');
+    const hasCamera = localStream.getVideoTracks().length > 0;
+    if (camBtn) {
+        camBtn.innerText = hasCamera ? "Cam Off" : "Cam On";
+        camBtn.classList.toggle('muted-state', !hasCamera);
     }
 }
 
