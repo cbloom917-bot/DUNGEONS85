@@ -36,6 +36,7 @@ let currentMouseWorldY = 0;
 let contextSelectedToken = null;
 let gmRoomMode = "create";
 let hasReceivedInitialTokenSync = false;
+let hasReceivedInitialFoWSync = false;
 
 const canvas = document.getElementById('vtt-canvas');
 const ctx = canvas.getContext('2d');
@@ -316,6 +317,7 @@ function toggleLocalVideo() {
 function initHybridMediaVttStack(roomName, playerName) {
     console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
     hasReceivedInitialTokenSync = false;
+    hasReceivedInitialFoWSync = false;
 
     if (socket) {
         socket.disconnect();
@@ -563,11 +565,28 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncFoW', (fowData) => {
-            tableState.fowEnabled = fowData.enabled;
-            tableState.fowPolygons = fowData.polygons;
+            if (!fowData || typeof fowData !== 'object') return;
+
+            const hasLocalFoWWork =
+                tableState.fowEnabled ||
+                (Array.isArray(tableState.fowPolygons) && tableState.fowPolygons.length > 0) ||
+                tableState.isDarknessActive;
+
+            // Reconnect safety: if the GM has local Fog of War work, do not let
+            // a stale server snapshot erase it after a brief websocket reconnect.
+            // Re-publish the GM's local FoW state instead.
+            if (tableState.isDM && hasReceivedInitialFoWSync && hasLocalFoWWork) {
+                console.warn("DEBUG: Ignoring syncFoW after GM reconnect to protect local fog state.");
+                broadcastFoW();
+                return;
+            }
+
+            hasReceivedInitialFoWSync = true;
+            tableState.fowEnabled = Boolean(fowData.enabled);
+            tableState.fowPolygons = Array.isArray(fowData.polygons) ? fowData.polygons : [];
 
             if (fowData.darkness !== undefined) {
-                tableState.isDarknessActive = fowData.darkness;
+                tableState.isDarknessActive = Boolean(fowData.darkness);
             }
 
             if (tableState.isDM) updateFogUI();
