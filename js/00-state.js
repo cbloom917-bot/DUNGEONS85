@@ -57,11 +57,19 @@ function markTableSaved() {
     tableDirty = false;
 }
 
-window.addEventListener('beforeunload', (event) => {
-    if (!tableState.isDM || !tableDirty) return;
+function hasUnsavedTableChanges() {
+    return !!(tableState.isDM && tableDirty);
+}
 
+window.addEventListener('beforeunload', (event) => {
+    if (!hasUnsavedTableChanges()) return;
+
+    // Modern browsers ignore custom text, but setting returnValue to a
+    // non-empty string is still the most compatible way to trigger the
+    // native unsaved-changes confirmation dialog.
     event.preventDefault();
-    event.returnValue = '';
+    event.returnValue = 'You have unsaved changes.';
+    return event.returnValue;
 });
 
 const canvas = document.getElementById('vtt-canvas');
