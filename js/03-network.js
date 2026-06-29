@@ -257,6 +257,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             if (match) {
                 match.x = data.x;
                 match.y = data.y;
+                if (tableState.isDM) markTableDirty();
                 draw();
             }
         });
