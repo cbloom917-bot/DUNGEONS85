@@ -178,17 +178,26 @@ io.on('connection', (socket) => {
 
         const state = roomCampaignStates[currentRoom];
         const player = state.players.find(p => p.socketId === socket.id);
-
-        // Only the GM should be moving/updating table tokens.
-        if (!player || !player.isDM) return;
+        if (!player) return;
 
         const token = state.tokens.find(t => String(t.id) === String(data.id));
-        if (token) {
-            token.x = Number(data.x) || token.x;
-            token.y = Number(data.y) || token.y;
-        }
+        if (!token) return;
 
-        socket.to(currentRoom).emit('tokenMoved', data);
+        // Players may move visible table tokens. Hidden tokens remain GM-only.
+        if (!player.isDM && token.hidden) return;
+
+        const nextX = Number(data.x);
+        const nextY = Number(data.y);
+        if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+
+        token.x = nextX;
+        token.y = nextY;
+
+        socket.to(currentRoom).emit('tokenMoved', {
+            id: token.id,
+            x: token.x,
+            y: token.y
+        });
     });
 
     socket.on('updateMapImage', (mapSrcString) => {
