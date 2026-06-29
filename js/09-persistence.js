@@ -28,6 +28,7 @@ function exportTableState() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    markTableSaved();
 }
 
 async function importD85Module(file) {
@@ -67,6 +68,7 @@ async function importD85Module(file) {
             broadcastFullTableState();
 
             draw();
+            markTableSaved();
 
             alert(".d85 File loaded successfully!");
         } catch (err) {

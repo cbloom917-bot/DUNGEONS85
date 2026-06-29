@@ -39,6 +39,7 @@ function toggleFogMode() {
             currentFoWPolygon = [];
         }
         updateFogUI();
+        markTableDirty();
         broadcastFoW();
         draw();
     }
@@ -59,6 +60,7 @@ function resetFog() {
         currentFoWPolygon = [];
         isDrawingFoW = false;
         updateFogUI();
+        markTableDirty();
         broadcastFoW();
         draw();
     }
@@ -227,6 +229,7 @@ function saveOpenNote() {
     }
 
     closeNoteEditor(false);
+    markTableDirty();
     broadcastNotes();
     draw();
 }
@@ -236,6 +239,7 @@ function deleteOpenNote() {
 
     tableState.notes = tableState.notes.filter(note => note.id !== openNoteId);
     closeNoteEditor(false);
+    markTableDirty();
     broadcastNotes();
     draw();
 }

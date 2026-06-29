@@ -46,6 +46,23 @@ let hasReceivedInitialNotesSync = false;
 let notesVisible = false;
 let openNoteId = null;
 let pendingNoteWorldPosition = null;
+let tableDirty = false;
+
+function markTableDirty() {
+    if (!tableState.isDM) return;
+    tableDirty = true;
+}
+
+function markTableSaved() {
+    tableDirty = false;
+}
+
+window.addEventListener('beforeunload', (event) => {
+    if (!tableState.isDM || !tableDirty) return;
+
+    event.preventDefault();
+    event.returnValue = '';
+});
 
 const canvas = document.getElementById('vtt-canvas');
 const ctx = canvas.getContext('2d');

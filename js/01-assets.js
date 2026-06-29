@@ -99,6 +99,7 @@ function selectLocalFile(mode) {
 
             if (mode === 'MAP') {
                 tableState.mapSrc = dataUrl;
+                markTableDirty();
                 if (socket) socket.emit('updateMapImage', dataUrl);
             } else {
                 tableState.tokens.push({
@@ -109,6 +110,7 @@ function selectLocalFile(mode) {
                     size: DEFAULT_TOKEN_SIZE,
                     hidden: true
                 });
+                markTableDirty();
                 broadcastTokensMatrixChange();
             }
 

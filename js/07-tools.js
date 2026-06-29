@@ -76,6 +76,7 @@ function igniteTorch() {
         if (tableState.isDarknessActive) {
             tableState.isDarknessActive = false;
             updateFogUI();
+            markTableDirty();
             broadcastFoW();
             draw();
             addResultToHistoryTicker("[SYS]", 0, "NEW TORCH IGNITED");
@@ -103,6 +104,7 @@ function extinguishTorch() {
         if (!tableState.isDarknessActive) {
             tableState.isDarknessActive = true;
             updateFogUI();
+            markTableDirty();
             broadcastFoW();
             draw();
             addResultToHistoryTicker("[SYS]", 0, "TORCH EXPIRED: LIGHTS OUT");
