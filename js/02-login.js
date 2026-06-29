@@ -18,6 +18,51 @@ function generateRandomRoomName(force = false) {
     roomInput.value = `${adj}${noun}${num}`;
 }
 
+function setDmCharacterNameForMode(mode) {
+    const nameInput = document.getElementById('char-name-input');
+    if (!nameInput) return;
+
+    if (mode === "rejoin") {
+        const lastDmName = localStorage.getItem('d85LastDmName') || localStorage.getItem('d85LastPlayerName');
+        nameInput.value = lastDmName || "Dungeon Master";
+        return;
+    }
+
+    nameInput.value = "Dungeon Master";
+}
+
+function refreshDmRoomModeButtons() {
+    const rejoinButton = document.getElementById('gm-rejoin');
+    const createButton = document.getElementById('gm-create');
+    const lastRoom = localStorage.getItem('d85LastRoomName');
+
+    if (rejoinButton) {
+        rejoinButton.innerText = lastRoom ? `REJOIN ${lastRoom}` : "REJOIN LAST";
+        rejoinButton.classList.toggle('active', gmRoomMode === "rejoin");
+    }
+
+    if (createButton) {
+        createButton.classList.toggle('active', gmRoomMode === "create");
+    }
+}
+
+function applyDmRoomMode(mode) {
+    const roomInput = document.getElementById('room-id-input');
+    const lastRoom = localStorage.getItem('d85LastRoomName');
+
+    if (mode === "rejoin" && lastRoom && roomInput) {
+        gmRoomMode = "rejoin";
+        roomInput.value = lastRoom;
+        setDmCharacterNameForMode("rejoin");
+    } else {
+        gmRoomMode = "create";
+        generateRandomRoomName(true);
+        setDmCharacterNameForMode("create");
+    }
+
+    refreshDmRoomModeButtons();
+}
+
 function setRoleSelection(isDMSelection) {
     tableState.isDM = isDMSelection;
 
@@ -26,6 +71,7 @@ function setRoleSelection(isDMSelection) {
     const gmRoomModeBox = document.getElementById('gm-room-mode');
     const gmRoomNote = document.getElementById('gm-room-note');
     const roomInput = document.getElementById('room-id-input');
+    const nameInput = document.getElementById('char-name-input');
 
     if (dmButton) dmButton.classList.toggle('active', isDMSelection);
     if (playerButton) playerButton.classList.toggle('active', !isDMSelection);
@@ -33,57 +79,27 @@ function setRoleSelection(isDMSelection) {
     if (isDMSelection) {
         if (gmRoomModeBox) gmRoomModeBox.classList.remove('hidden');
         if (gmRoomNote) gmRoomNote.classList.remove('hidden');
-
-        const lastRoom = localStorage.getItem('d85LastRoomName');
-        const rejoinButton = document.getElementById('gm-rejoin');
-        const createButton = document.getElementById('gm-create');
-
-        if (lastRoom) {
-            gmRoomMode = "rejoin";
-            if (rejoinButton) {
-                rejoinButton.innerText = `REJOIN ${lastRoom}`;
-                rejoinButton.classList.add('active');
-            }
-            if (createButton) createButton.classList.remove('active');
-            if (roomInput) roomInput.value = lastRoom;
-        } else {
-            gmRoomMode = "create";
-            if (rejoinButton) {
-                rejoinButton.innerText = "REJOIN LAST";
-                rejoinButton.classList.remove('active');
-            }
-            if (createButton) createButton.classList.add('active');
-            generateRandomRoomName(true);
-        }
+        applyDmRoomMode("create");
     } else {
         gmRoomMode = "rejoin";
         if (gmRoomModeBox) gmRoomModeBox.classList.add('hidden');
         if (gmRoomNote) gmRoomNote.classList.add('hidden');
         if (roomInput) roomInput.value = "";
+        if (nameInput) nameInput.value = localStorage.getItem('d85LastPlayerName') || "";
     }
 }
 
 function bindLoginControls() {
     const gmRejoinBtn = document.getElementById('gm-rejoin');
     const gmCreateBtn = document.getElementById('gm-create');
-    const roomInput = document.getElementById('room-id-input');
 
     if (gmRejoinBtn && gmCreateBtn) {
-        gmRejoinBtn.addEventListener('click', () => {
-            const lastRoom = localStorage.getItem('d85LastRoomName');
-            if (!lastRoom || !roomInput) return;
-
-            gmRoomMode = "rejoin";
-            roomInput.value = lastRoom;
-            gmRejoinBtn.classList.add('active');
-            gmCreateBtn.classList.remove('active');
+        gmCreateBtn.addEventListener('click', () => {
+            applyDmRoomMode("create");
         });
 
-        gmCreateBtn.addEventListener('click', () => {
-            gmRoomMode = "create";
-            generateRandomRoomName(true);
-            gmCreateBtn.classList.add('active');
-            gmRejoinBtn.classList.remove('active');
+        gmRejoinBtn.addEventListener('click', () => {
+            applyDmRoomMode("rejoin");
         });
     }
 }
@@ -94,11 +110,6 @@ function bindJoinButton() {
 
     joinBtn.addEventListener('click', async () => {
         const nameInput = document.getElementById('char-name-input').value.trim();
-
-        if (tableState.isDM && gmRoomMode === "create") {
-            generateRandomRoomName(true);
-        }
-
         const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
 
         if (!nameInput || !roomInput) {
@@ -112,6 +123,7 @@ function bindJoinButton() {
         localStorage.setItem('d85LastRoomName', roomInput);
         localStorage.setItem('d85LastPlayerName', nameInput);
         localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
+        if (tableState.isDM) localStorage.setItem('d85LastDmName', nameInput);
 
         try {
             await setupCameraAndVideo();
