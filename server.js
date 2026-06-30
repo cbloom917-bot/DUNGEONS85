@@ -67,6 +67,26 @@ function emitNotesToRoom(roomName, sourceSocketId = null) {
     });
 }
 
+
+function sanitizeToken(token) {
+    if (!token || typeof token !== 'object') return null;
+
+    return {
+        id: String(token.id || `token-${Date.now()}-${Math.random()}`),
+        src: String(token.src || ''),
+        x: Number(token.x) || 0,
+        y: Number(token.y) || 0,
+        size: Number(token.size) || 70,
+        hidden: Boolean(token.hidden),
+        rev: Number(token.rev) || 0
+    };
+}
+
+function bumpTokenRevision(token) {
+    token.rev = (Number(token.rev) || 0) + 1;
+    return token.rev;
+}
+
 io.on('connection', (socket) => {
     let currentRoom = null;
 
@@ -159,14 +179,13 @@ io.on('connection', (socket) => {
         // This prevents a reconnecting/stale player client from resurrecting old token state.
         if (!player || !player.isDM) return;
 
-        const leanTokens = tokens.map(t => ({
-            id: String(t.id),
-            src: String(t.src),
-            x: Number(t.x) || 0,
-            y: Number(t.y) || 0,
-            size: Number(t.size) || 1,
-            hidden: Boolean(t.hidden)
-        }));
+        const leanTokens = tokens
+            .map(sanitizeToken)
+            .filter(Boolean)
+            .map((token) => {
+                bumpTokenRevision(token);
+                return token;
+            });
 
         state.tokens = leanTokens;
         socket.broadcast.to(currentRoom).emit('syncTokens', leanTokens);
@@ -192,12 +211,92 @@ io.on('connection', (socket) => {
 
         token.x = nextX;
         token.y = nextY;
+        const rev = bumpTokenRevision(token);
 
         socket.to(currentRoom).emit('tokenMoved', {
             id: token.id,
             x: token.x,
-            y: token.y
+            y: token.y,
+            rev
         });
+    });
+
+    socket.on('tokenResize', (data) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!data || typeof data !== 'object') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
+        const token = state.tokens.find(t => String(t.id) === String(data.id));
+        if (!token) return;
+
+        const nextSize = Number(data.size);
+        if (!Number.isFinite(nextSize) || nextSize <= 0) return;
+
+        token.size = nextSize;
+        const rev = bumpTokenRevision(token);
+
+        socket.to(currentRoom).emit('tokenResized', {
+            id: token.id,
+            size: token.size,
+            rev
+        });
+    });
+
+    socket.on('tokenVisibility', (data) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!data || typeof data !== 'object') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
+        const token = state.tokens.find(t => String(t.id) === String(data.id));
+        if (!token) return;
+
+        token.hidden = Boolean(data.hidden);
+        const rev = bumpTokenRevision(token);
+
+        socket.to(currentRoom).emit('tokenVisibilityChanged', {
+            id: token.id,
+            hidden: token.hidden,
+            rev
+        });
+    });
+
+    socket.on('tokenAdd', (incomingToken) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
+        const token = sanitizeToken(incomingToken);
+        if (!token || !token.src) return;
+
+        bumpTokenRevision(token);
+        state.tokens.push(token);
+        socket.to(currentRoom).emit('tokenAdded', token);
+    });
+
+    socket.on('tokenDelete', (data) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!data || typeof data !== 'object') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
+        const tokenId = String(data.id || '');
+        if (!tokenId) return;
+
+        const beforeCount = state.tokens.length;
+        state.tokens = state.tokens.filter(t => String(t.id) !== tokenId);
+        if (state.tokens.length !== beforeCount) {
+            socket.to(currentRoom).emit('tokenDeleted', { id: tokenId });
+        }
     });
 
     socket.on('updateMapImage', (mapSrcString) => {
