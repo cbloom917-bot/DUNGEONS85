@@ -141,8 +141,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             previousPlayers.forEach(oldPlayer => {
                 const stillConnected = playersArray.some(p => p.peerId === oldPlayer.peerId);
                 if (!stillConnected) {
-                    const deadBox = document.getElementById(`video-${oldPlayer.peerId}`);
-                    if (deadBox) deadBox.remove();
+                    closePeerConnectionsForPeer(oldPlayer.peerId, { removeVideoBox: true });
                 }
             });
 
@@ -155,16 +154,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 const wasKnown = previousPlayers.some(existing => existing.peerId === p.peerId);
 
                 if (p.peerId !== peerId && !wasKnown && localStream) {
-                    ensurePlayerVideoSeat(p);
-                    const call = peer.call(p.peerId, localStream);
-
-                    call.on('stream', (remoteStream) => {
-                        addVideoFeed(remoteStream, call.peer, p.name, p.isDM);
-                    });
-
-                    call.on('error', (err) => {
-                        console.error("DEBUG: Outgoing PeerJS call error:", err);
-                    });
+                    callPeerWithLocalStream(p, "new-player");
                 }
             });
 
@@ -187,6 +177,8 @@ function initHybridMediaVttStack(roomName, playerName) {
                 return;
             }
 
+            closePeerConnectionsForPeer(call.peer, { removeVideoBox: false });
+            registerPeerCall(call.peer, call);
             call.answer(localStream);
 
             call.on('stream', (remoteStream) => {
@@ -195,7 +187,8 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             call.on('error', (err) => {
-                console.error("DEBUG: Incoming PeerJS call error:", err);
+                console.warn("DEBUG: Incoming PeerJS call error:", err);
+                closePeerConnectionsForPeer(call.peer, { removeVideoBox: false });
             });
         });
 

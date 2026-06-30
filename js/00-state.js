@@ -26,6 +26,7 @@ let tokenImageCache = {};
 let socket = null;
 let peer = null;
 let localStream = null;
+let activePeerCalls = new Map();
 let currentActiveRoomArray = [];
 let localPeerId = null;
 let activeRoomName = '';

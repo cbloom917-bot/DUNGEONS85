@@ -146,6 +146,7 @@ function initializeClient() {
     window.addEventListener('click', () => { ctxMenu.style.display = 'none'; });
     window.addEventListener('resize', resizeCanvas);
     window.addEventListener('beforeunload', () => {
+        closeAllPeerConnections();
         if (socket) socket.disconnect();
         if (peer) peer.destroy();
     });
@@ -198,7 +199,8 @@ async function toggleLocalAudio() {
                 showLocalMediaStatus("mic", "MIC OFF");
             }
 
-            refreshPeerMediaConnections();
+            // Audio mute/unmute only toggles the existing track. Do not refresh
+            // PeerJS calls here; renegotiating on mute caused remote videos to blink.
             return;
         }
 
@@ -219,7 +221,7 @@ async function toggleLocalAudio() {
 
                 clearLocalMediaStatus("mic");
                 console.log("DEBUG: Microphone permission granted on demand.");
-                refreshPeerMediaConnections();
+                refreshPeerMediaConnections("audio-permission");
             }
         } catch (err) {
             console.warn("DEBUG: Microphone access denied on demand:", err);
@@ -253,7 +255,7 @@ async function toggleLocalVideo() {
                 showLocalMediaStatus("cam", "CAMERA OFF");
             }
 
-            refreshPeerMediaConnections();
+            refreshPeerMediaConnections("camera-toggle");
             return;
         }
 
@@ -274,7 +276,7 @@ async function toggleLocalVideo() {
 
                 clearLocalMediaStatus("cam");
                 console.log("DEBUG: Camera permission granted on demand.");
-                refreshPeerMediaConnections();
+                refreshPeerMediaConnections("camera-permission");
             }
         } catch (err) {
             console.warn("DEBUG: Camera access denied on demand:", err);

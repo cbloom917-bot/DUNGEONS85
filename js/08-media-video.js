@@ -100,25 +100,107 @@ async function setupCameraAndVideo() {
     console.log("DEBUG: Joined with media off by default.");
 }
 
-function refreshPeerMediaConnections() {
+function registerPeerCall(peerId, call) {
+    if (!peerId || !call) return call;
+
+    const key = String(peerId);
+    if (!activePeerCalls.has(key)) activePeerCalls.set(key, new Set());
+
+    const calls = activePeerCalls.get(key);
+    calls.add(call);
+
+    const forgetCall = () => {
+        const currentCalls = activePeerCalls.get(key);
+        if (!currentCalls) return;
+        currentCalls.delete(call);
+        if (!currentCalls.size) activePeerCalls.delete(key);
+    };
+
+    call.on('close', forgetCall);
+    call.on('error', forgetCall);
+
+    return call;
+}
+
+function closePeerConnectionsForPeer(peerId, options = {}) {
+    if (!peerId) return;
+
+    const key = String(peerId);
+    const calls = activePeerCalls.get(key);
+
+    if (calls) {
+        Array.from(calls).forEach(call => {
+            try {
+                if (call && typeof call.close === 'function') call.close();
+            } catch (err) {
+                console.warn("DEBUG: Failed to close stale PeerJS call:", err);
+            }
+        });
+        activePeerCalls.delete(key);
+    }
+
+    if (Array.isArray(customVideoOrder)) {
+        customVideoOrder = customVideoOrder.filter(id => String(id) !== key);
+    }
+
+    const box = document.getElementById(`video-${key}`);
+    if (!box) return;
+
+    const videoEl = box.querySelector('video');
+    if (videoEl) {
+        videoEl.pause();
+        videoEl.srcObject = null;
+    }
+
+    if (options.removeVideoBox) {
+        box.remove();
+    } else {
+        refreshRemoteMediaStatus(box, null);
+    }
+}
+
+function closeAllPeerConnections() {
+    Array.from(activePeerCalls.keys()).forEach(peerId => {
+        closePeerConnectionsForPeer(peerId, { removeVideoBox: false });
+    });
+    activePeerCalls.clear();
+}
+
+function callPeerWithLocalStream(player, reason = "media-refresh") {
+    if (!peer || !localStream || !player || !player.peerId || player.peerId === localPeerId) return null;
+
+    try {
+        // One live PeerJS media call per remote peer keeps long sessions from
+        // accumulating stale RTCPeerConnections. Camera changes deliberately
+        // rebuild the call; microphone mute/unmute does not call this path.
+        closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
+        ensurePlayerVideoSeat(player);
+
+        const call = registerPeerCall(player.peerId, peer.call(player.peerId, localStream));
+
+        call.on('stream', (remoteStream) => {
+            addVideoFeed(remoteStream, call.peer, player.name, player.isDM);
+        });
+
+        call.on('error', (err) => {
+            console.warn(`DEBUG: PeerJS call failed during ${reason}:`, err);
+            closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
+        });
+
+        return call;
+    } catch (err) {
+        console.warn(`DEBUG: Failed to open PeerJS call during ${reason}:`, err);
+        closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
+        return null;
+    }
+}
+
+function refreshPeerMediaConnections(reason = "media-refresh") {
     if (!peer || !localStream || !Array.isArray(currentActiveRoomArray)) return;
 
     currentActiveRoomArray.forEach(p => {
         if (!p || !p.peerId || p.peerId === localPeerId) return;
-
-        try {
-            const call = peer.call(p.peerId, localStream);
-
-            call.on('stream', (remoteStream) => {
-                addVideoFeed(remoteStream, call.peer, p.name, p.isDM);
-            });
-
-            call.on('error', (err) => {
-                console.error("DEBUG: Media refresh PeerJS call error:", err);
-            });
-        } catch (err) {
-            console.error("DEBUG: Failed to refresh PeerJS media connection:", err);
-        }
+        callPeerWithLocalStream(p, reason);
     });
 }
 
