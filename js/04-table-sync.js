@@ -103,17 +103,46 @@ function updateFogUI() {
 }
 
 
+function getLeanToken(token) {
+        return {
+            id: token.id,
+            src: token.src,
+            x: token.x,
+            y: token.y,
+            size: token.size,
+            hidden: token.hidden,
+            rev: token.rev || 0
+        };
+    }
+
 function broadcastTokensMatrixChange() {
         if (!tableState.isDM || !socket) return;
-        const leanTokens = tableState.tokens.map(t => ({
-            id: t.id,
-            src: t.src, 
-            x: t.x,
-            y: t.y,
-            size: t.size,
-            hidden: t.hidden
-        }));
-        socket.emit('updateTokensMatrix', leanTokens);
+        socket.emit('updateTokensMatrix', tableState.tokens.map(getLeanToken));
+    }
+
+function emitTokenMove(token) {
+        if (!socket || !token) return;
+        socket.emit('tokenMove', { id: token.id, x: token.x, y: token.y });
+    }
+
+function emitTokenResize(token) {
+        if (!tableState.isDM || !socket || !token) return;
+        socket.emit('tokenResize', { id: token.id, size: token.size });
+    }
+
+function emitTokenVisibility(token) {
+        if (!tableState.isDM || !socket || !token) return;
+        socket.emit('tokenVisibility', { id: token.id, hidden: token.hidden });
+    }
+
+function emitTokenAdd(token) {
+        if (!tableState.isDM || !socket || !token) return;
+        socket.emit('tokenAdd', getLeanToken(token));
+    }
+
+function emitTokenDelete(tokenId) {
+        if (!tableState.isDM || !socket || !tokenId) return;
+        socket.emit('tokenDelete', { id: tokenId });
     }
 
 

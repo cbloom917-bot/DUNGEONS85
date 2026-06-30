@@ -111,7 +111,7 @@ function selectLocalFile(mode) {
                     hidden: true
                 });
                 markTableDirty();
-                broadcastTokensMatrixChange();
+                emitTokenAdd(tableState.tokens[tableState.tokens.length - 1]);
             }
 
             loadCloudImage(dataUrl).then(() => {

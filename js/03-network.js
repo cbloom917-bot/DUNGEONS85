@@ -253,13 +253,66 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('tokenMoved', (data) => {
-            const match = tableState.tokens.find(t => t.id === data.id);
+            const match = tableState.tokens.find(t => String(t.id) === String(data.id));
             if (match) {
-                match.x = data.x;
-                match.y = data.y;
+                const incomingRev = Number(data.rev) || 0;
+                if (incomingRev && Number(match.rev || 0) > incomingRev) return;
+
+                const nextX = Number(data.x);
+                const nextY = Number(data.y);
+                if (Number.isFinite(nextX)) match.x = nextX;
+                if (Number.isFinite(nextY)) match.y = nextY;
+                match.rev = incomingRev || match.rev || 0;
                 if (tableState.isDM) markTableDirty();
                 draw();
             }
+        });
+
+        socket.on('tokenResized', (data) => {
+            const match = tableState.tokens.find(t => String(t.id) === String(data.id));
+            if (!match) return;
+
+            const incomingRev = Number(data.rev) || 0;
+            if (incomingRev && Number(match.rev || 0) > incomingRev) return;
+
+            const nextSize = Number(data.size);
+            if (Number.isFinite(nextSize) && nextSize > 0) match.size = nextSize;
+            match.rev = incomingRev || match.rev || 0;
+            if (tableState.isDM) markTableDirty();
+            draw();
+        });
+
+        socket.on('tokenVisibilityChanged', (data) => {
+            const match = tableState.tokens.find(t => String(t.id) === String(data.id));
+            if (!match) return;
+
+            const incomingRev = Number(data.rev) || 0;
+            if (incomingRev && Number(match.rev || 0) > incomingRev) return;
+
+            match.hidden = Boolean(data.hidden);
+            match.rev = incomingRev || match.rev || 0;
+            if (tableState.isDM) markTableDirty();
+            draw();
+        });
+
+        socket.on('tokenAdded', (token) => {
+            if (!token || typeof token !== 'object') return;
+            if (tableState.tokens.some(t => String(t.id) === String(token.id))) return;
+
+            tableState.tokens.push(token);
+            if (token.src) loadCloudImage(token.src).then(() => draw());
+            if (tableState.isDM) markTableDirty();
+            draw();
+        });
+
+        socket.on('tokenDeleted', (data) => {
+            if (!data || typeof data !== 'object') return;
+            const tokenId = String(data.id || '');
+            if (!tokenId) return;
+
+            tableState.tokens = tableState.tokens.filter(t => String(t.id) !== tokenId);
+            if (tableState.isDM) markTableDirty();
+            draw();
         });
 
         socket.on('diceRolledAnimation', (data) => {

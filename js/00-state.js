@@ -48,6 +48,11 @@ let openNoteId = null;
 let pendingNoteWorldPosition = null;
 let tableDirty = false;
 
+const TOKEN_MOVE_EMIT_INTERVAL_MS = 75;
+let lastTokenMoveEmitAt = 0;
+let pendingTokenMove = null;
+let pendingTokenMoveTimer = null;
+
 function markTableDirty() {
     if (!tableState.isDM) return;
     tableDirty = true;

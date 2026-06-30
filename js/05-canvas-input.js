@@ -10,6 +10,44 @@ let dragStart = { x: 0, y: 0 };
 let selectedToken = null;
 let tokenDragChanged = false;
 
+
+function queueTokenMove(token, forceNow = false) {
+        if (!socket || !token) return;
+
+        if (forceNow) {
+            if (pendingTokenMoveTimer) {
+                clearTimeout(pendingTokenMoveTimer);
+                pendingTokenMoveTimer = null;
+            }
+            pendingTokenMove = null;
+            lastTokenMoveEmitAt = Date.now();
+            emitTokenMove(token);
+            return;
+        }
+
+        const now = Date.now();
+        const elapsed = now - lastTokenMoveEmitAt;
+
+        if (elapsed >= TOKEN_MOVE_EMIT_INTERVAL_MS) {
+            lastTokenMoveEmitAt = now;
+            emitTokenMove(token);
+            return;
+        }
+
+        pendingTokenMove = token;
+
+        if (!pendingTokenMoveTimer) {
+            pendingTokenMoveTimer = setTimeout(() => {
+                if (pendingTokenMove) {
+                    lastTokenMoveEmitAt = Date.now();
+                    emitTokenMove(pendingTokenMove);
+                }
+                pendingTokenMove = null;
+                pendingTokenMoveTimer = null;
+            }, TOKEN_MOVE_EMIT_INTERVAL_MS - elapsed);
+        }
+    }
+
 function getWorldPointFromMouseEvent(e) {
         const rect = canvas.getBoundingClientRect();
         return {
@@ -140,7 +178,7 @@ function findNoteAt(worldX, worldY) {
             selectedToken.x += dx;
             selectedToken.y += dy;
             tokenDragChanged = true;
-            if (socket) { socket.emit('tokenMove', { id: selectedToken.id, x: selectedToken.x, y: selectedToken.y }); }
+            queueTokenMove(selectedToken);
         } else if (isDraggingWorkspace) {
             tableState.camera.x += (mouseX - dragStart.x);
             tableState.camera.y += (mouseY - dragStart.y);
@@ -153,7 +191,7 @@ function findNoteAt(worldX, worldY) {
     window.addEventListener('mouseup', () => {
         if (selectedToken && tokenDragChanged) {
             markTableDirty();
-            broadcastTokensMatrixChange();
+            queueTokenMove(selectedToken, true);
         }
         isDraggingWorkspace = false; selectedToken = null; tokenDragChanged = false;
     });
@@ -187,14 +225,14 @@ function executeContextResize(newSize) {
         contextSelectedToken.size = newSize;
         markTableDirty();
         draw();
-        broadcastTokensMatrixChange();
+        emitTokenResize(contextSelectedToken);
     }
 
 
 function executeContextReveal() {
         if (!contextSelectedToken) return; contextSelectedToken.hidden = !contextSelectedToken.hidden;
         markTableDirty();
-        draw(); broadcastTokensMatrixChange();
+        draw(); emitTokenVisibility(contextSelectedToken);
     }
 
 
@@ -205,15 +243,16 @@ function executeContextDuplicate() {
             x: contextSelectedToken.x + 20, y: contextSelectedToken.y,
             size: contextSelectedToken.size, hidden: contextSelectedToken.hidden
         };
-        tableState.tokens.push(clone); markTableDirty(); draw(); broadcastTokensMatrixChange();
+        tableState.tokens.push(clone); markTableDirty(); draw(); emitTokenAdd(clone);
     }
 
 
 function executeContextDelete() {
         if (!contextSelectedToken) return;
-        tableState.tokens = tableState.tokens.filter(t => t.id !== contextSelectedToken.id);
+        const deletedTokenId = contextSelectedToken.id;
+        tableState.tokens = tableState.tokens.filter(t => t.id !== deletedTokenId);
         markTableDirty();
-        draw(); broadcastTokensMatrixChange();
+        draw(); emitTokenDelete(deletedTokenId);
     }
 
 
