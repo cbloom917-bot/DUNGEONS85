@@ -174,7 +174,12 @@ window.addEventListener('DOMContentLoaded', initializeClient);
 
 function forcePlayerFocus() {
         if (!tableState.isDM || !socket) return;
-        socket.emit('forceCamera', tableState.camera);
+        const center = getCurrentCameraCenterWorld();
+        socket.emit('forceCamera', {
+            centerOnly: true,
+            centerX: center.centerX,
+            centerY: center.centerY
+        });
         addResultToHistoryTicker("[SYS]", 0, "GM FORCED CAMERA FOCUS");
     }
 

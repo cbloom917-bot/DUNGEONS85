@@ -236,6 +236,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             loadCloudImage(mapSrc)
                 .then(() => {
+                    centerMapInView();
                     draw();
                 })
                 .catch((err) => {
@@ -344,11 +345,15 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncCamera', (cameraData) => {
-            if (tableState.isDM) return;
+            if (tableState.isDM || !cameraData || typeof cameraData !== 'object') return;
 
-            tableState.camera.x = cameraData.x;
-            tableState.camera.y = cameraData.y;
-            tableState.camera.zoom = cameraData.zoom;
+            if (cameraData.centerOnly) {
+                centerCameraOnWorldPoint(cameraData.centerX, cameraData.centerY, tableState.camera.zoom);
+            } else {
+                tableState.camera.x = cameraData.x;
+                tableState.camera.y = cameraData.y;
+                tableState.camera.zoom = cameraData.zoom;
+            }
 
             draw();
             addResultToHistoryTicker("[SYS]", 0, "VIEW FOCUSED BY GM");

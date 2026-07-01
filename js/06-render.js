@@ -5,6 +5,27 @@
 // Canvas rendering
 // ============================================================
 
+
+function centerMapInView(zoom = DEFAULT_MAP_ZOOM) {
+    const nextZoom = Number(zoom);
+    tableState.camera.zoom = Number.isFinite(nextZoom) && nextZoom > 0 ? nextZoom : DEFAULT_MAP_ZOOM;
+    tableState.camera.x = canvas.width / 2;
+    tableState.camera.y = canvas.height / 2;
+}
+
+function centerCameraOnWorldPoint(worldX, worldY, zoom = tableState.camera.zoom) {
+    const nextZoom = Number(zoom);
+    tableState.camera.zoom = Number.isFinite(nextZoom) && nextZoom > 0 ? nextZoom : tableState.camera.zoom;
+    tableState.camera.x = canvas.width / 2 - (Number(worldX) || 0) * tableState.camera.zoom;
+    tableState.camera.y = canvas.height / 2 - (Number(worldY) || 0) * tableState.camera.zoom;
+}
+
+function getCurrentCameraCenterWorld() {
+    return {
+        centerX: (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom,
+        centerY: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom
+    };
+}
 function drawMapNotes(viewLeft, viewRight, viewTop, viewBottom) {
         if (!Array.isArray(tableState.notes)) return;
 

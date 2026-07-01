@@ -115,6 +115,7 @@ function selectLocalFile(mode) {
             }
 
             loadCloudImage(dataUrl).then(() => {
+                if (mode === 'MAP') centerMapInView();
                 hideLoading();
                 draw();
             }).catch((err) => {

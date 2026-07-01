@@ -9,6 +9,7 @@
 const SERVER_URL = "https://newvtt.onrender.com";
 const DEFAULT_TOKEN_SIZE = 70;
 const GRID_SIZE = 70;
+const DEFAULT_MAP_ZOOM = 0.5;
 
 let tableState = {
     playerName: '',
