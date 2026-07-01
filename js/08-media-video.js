@@ -160,6 +160,14 @@ function hasActivePeerCall(peerId) {
     return prunePeerCallSet(peerId).size > 0;
 }
 
+function hasLocalMediaTracks() {
+    return !!(
+        localStream &&
+        typeof localStream.getTracks === 'function' &&
+        localStream.getTracks().some(track => track && track.readyState !== 'ended')
+    );
+}
+
 function shouldInitiatePeerCall(remotePeerId, reason = "media-refresh") {
     if (!localPeerId || !remotePeerId || String(remotePeerId) === String(localPeerId)) return false;
 
@@ -428,8 +436,12 @@ function setupVideoBoxInitiative(box) {
 
     box.dataset.initiativeBound = "true";
 
-    box.addEventListener('click', () => {
+    box.addEventListener('click', (e) => {
         if (!tableState.isDM) return;
+
+        // Media controls live inside the local DM video box. Clicking Mute,
+        // Unmute, Cam On, or Cam Off must not start or change initiative.
+        if (e.target && e.target.closest && e.target.closest('button')) return;
 
         const peerId = box.dataset.peerId;
         if (!peerId) return;

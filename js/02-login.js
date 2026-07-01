@@ -256,7 +256,9 @@ async function toggleLocalVideo() {
                 showLocalMediaStatus("cam", "CAMERA OFF");
             }
 
-            refreshPeerMediaConnections("camera-toggle");
+            // Existing camera tracks can be enabled/disabled in place. Do not
+            // rebuild PeerJS calls here; renegotiating on every camera toggle
+            // causes remote feeds to blink or briefly disappear.
             return;
         }
 

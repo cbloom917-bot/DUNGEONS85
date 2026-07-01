@@ -154,8 +154,12 @@ function initHybridMediaVttStack(roomName, playerName) {
             playersArray.forEach(p => {
                 const wasKnown = previousPlayers.some(existing => existing.peerId === p.peerId);
 
-                if (p.peerId !== peerId && !wasKnown && localStream) {
-                    callPeerWithLocalStream(p, "new-player");
+                // Receive-only join support: when a new peer appears, any browser
+                // that already has live local media should offer it to the newcomer.
+                // Browsers with mic/camera still off keep their silent placeholder
+                // stream and do not create unnecessary calls.
+                if (p.peerId !== peerId && !wasKnown && hasLocalMediaTracks()) {
+                    callPeerWithLocalStream(p, "new-peer-media-offer");
                 }
             });
 
