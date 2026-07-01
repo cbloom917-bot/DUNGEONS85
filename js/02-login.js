@@ -222,7 +222,10 @@ async function toggleLocalAudio() {
 
                 clearLocalMediaStatus("mic");
                 console.log("DEBUG: Microphone permission granted on demand.");
-                refreshPeerMediaConnections("audio-permission");
+                // First microphone permission should not refresh PeerJS calls.
+                // The joining client may already be receiving video-only streams;
+                // rebuilding calls here briefly blanks those incoming feeds until
+                // a later camera refresh. Keep microphone permission track-only.
             }
         } catch (err) {
             console.warn("DEBUG: Microphone access denied on demand:", err);
