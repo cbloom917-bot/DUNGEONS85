@@ -100,16 +100,88 @@ async function setupCameraAndVideo() {
     console.log("DEBUG: Joined with media off by default.");
 }
 
+function releaseVideoElement(videoEl, options = {}) {
+    if (!videoEl) return;
+
+    const stream = videoEl.srcObject;
+    if (stream && typeof stream.getTracks === 'function') {
+        stream.getTracks().forEach(track => {
+            try {
+                track.stop();
+            } catch (err) {
+                console.warn("DEBUG: Failed to stop stale remote media track:", err);
+            }
+        });
+    }
+
+    videoEl.pause();
+    videoEl.srcObject = null;
+    if (options.removeAttribute) videoEl.removeAttribute('src');
+}
+
+function stopLocalMediaStream() {
+    if (!localStream || typeof localStream.getTracks !== 'function') return;
+
+    localStream.getTracks().forEach(track => {
+        try {
+            track.stop();
+        } catch (err) {
+            console.warn("DEBUG: Failed to stop local media track:", err);
+        }
+    });
+
+    localStream = null;
+
+    const localVideo = document.getElementById('local-video');
+    if (localVideo) {
+        localVideo.pause();
+        localVideo.srcObject = null;
+    }
+}
+
+function prunePeerCallSet(peerId) {
+    const key = String(peerId || '');
+    if (!key) return new Set();
+
+    const calls = activePeerCalls.get(key);
+    if (!calls) return new Set();
+
+    Array.from(calls).forEach(call => {
+        if (!call || call._d85Closed || call.open === false) {
+            calls.delete(call);
+        }
+    });
+
+    if (!calls.size) activePeerCalls.delete(key);
+    return activePeerCalls.get(key) || new Set();
+}
+
+function hasActivePeerCall(peerId) {
+    return prunePeerCallSet(peerId).size > 0;
+}
+
+function shouldInitiatePeerCall(remotePeerId, reason = "media-refresh") {
+    if (!localPeerId || !remotePeerId || String(remotePeerId) === String(localPeerId)) return false;
+
+    // Local media changes must be offered by the client whose stream changed.
+    // Normal table membership calls are deterministic so two browsers do not
+    // call each other at the same time and create duplicate WebRTC connections.
+    if (reason !== "new-player") return true;
+    return String(localPeerId) < String(remotePeerId);
+}
+
 function registerPeerCall(peerId, call) {
     if (!peerId || !call) return call;
 
     const key = String(peerId);
-    if (!activePeerCalls.has(key)) activePeerCalls.set(key, new Set());
-
-    const calls = activePeerCalls.get(key);
+    const calls = prunePeerCallSet(key);
     calls.add(call);
+    activePeerCalls.set(key, calls);
+
+    call._d85Closed = false;
 
     const forgetCall = () => {
+        call._d85Closed = true;
         const currentCalls = activePeerCalls.get(key);
         if (!currentCalls) return;
         currentCalls.delete(call);
@@ -131,6 +203,7 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
     if (calls) {
         Array.from(calls).forEach(call => {
             try {
+                call._d85Closed = true;
                 if (call && typeof call.close === 'function') call.close();
             } catch (err) {
                 console.warn("DEBUG: Failed to close stale PeerJS call:", err);
@@ -139,7 +212,9 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
         activePeerCalls.delete(key);
     }
 
-    if (Array.isArray(customVideoOrder)) {
+    incomingPeerCallAcceptedAt.delete(key);
+
+    if (options.removeVideoBox && Array.isArray(customVideoOrder)) {
         customVideoOrder = customVideoOrder.filter(id => String(id) !== key);
     }
 
@@ -147,10 +222,7 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
     if (!box) return;
 
     const videoEl = box.querySelector('video');
-    if (videoEl) {
-        videoEl.pause();
-        videoEl.srcObject = null;
-    }
+    if (videoEl) releaseVideoElement(videoEl, { removeAttribute: !!options.removeVideoBox });
 
     if (options.removeVideoBox) {
         box.remove();
@@ -164,10 +236,12 @@ function closeAllPeerConnections() {
         closePeerConnectionsForPeer(peerId, { removeVideoBox: false });
     });
     activePeerCalls.clear();
+    incomingPeerCallAcceptedAt.clear();
 }
 
 function callPeerWithLocalStream(player, reason = "media-refresh") {
     if (!peer || !localStream || !player || !player.peerId || player.peerId === localPeerId) return null;
+    if (!shouldInitiatePeerCall(player.peerId, reason)) return null;
 
     try {
         // One live PeerJS media call per remote peer keeps long sessions from
@@ -176,10 +250,18 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
         ensurePlayerVideoSeat(player);
 
-        const call = registerPeerCall(player.peerId, peer.call(player.peerId, localStream));
+        const rawCall = peer.call(player.peerId, localStream);
+        if (!rawCall) return null;
+
+        const call = registerPeerCall(player.peerId, rawCall);
 
         call.on('stream', (remoteStream) => {
             addVideoFeed(remoteStream, call.peer, player.name, player.isDM);
+        });
+
+        call.on('close', () => {
+            const box = document.getElementById(`video-${player.peerId}`);
+            if (box && !hasActivePeerCall(player.peerId)) refreshRemoteMediaStatus(box, null);
         });
 
         call.on('error', (err) => {

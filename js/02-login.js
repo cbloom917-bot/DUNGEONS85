@@ -147,6 +147,7 @@ function initializeClient() {
     window.addEventListener('resize', resizeCanvas);
     window.addEventListener('beforeunload', () => {
         closeAllPeerConnections();
+        stopLocalMediaStream();
         if (socket) socket.disconnect();
         if (peer) peer.destroy();
     });
@@ -260,7 +261,7 @@ async function toggleLocalVideo() {
         }
 
         try {
-            const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            const cameraStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CAPTURE_CONSTRAINTS, audio: false });
             const videoTrack = cameraStream.getVideoTracks()[0];
 
             if (videoTrack) {

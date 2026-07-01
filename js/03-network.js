@@ -18,6 +18,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     }
 
     if (peer) {
+        closeAllPeerConnections();
         peer.destroy();
         peer = null;
     }
@@ -174,21 +175,48 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             if (!localStream) {
                 console.warn("DEBUG: No local stream available to answer call");
+                try {
+                    if (call && typeof call.close === 'function') call.close();
+                } catch (err) {
+                    console.warn("DEBUG: Failed to close unanswered PeerJS call:", err);
+                }
                 return;
             }
 
-            closePeerConnectionsForPeer(call.peer, { removeVideoBox: false });
-            registerPeerCall(call.peer, call);
+            const callerPeerId = String(call.peer || '');
+            const now = Date.now();
+            const lastAcceptedAt = incomingPeerCallAcceptedAt.get(callerPeerId) || 0;
+
+            // PeerJS can deliver duplicate incoming calls during reconnects or
+            // simultaneous media refreshes. Accept the first call and drop
+            // immediate repeats so each remote peer has one active media path.
+            if (now - lastAcceptedAt < PEER_CALL_DEDUPE_WINDOW_MS) {
+                try {
+                    if (call && typeof call.close === 'function') call.close();
+                } catch (err) {
+                    console.warn("DEBUG: Failed to close duplicate PeerJS call:", err);
+                }
+                return;
+            }
+
+            closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
+            incomingPeerCallAcceptedAt.set(callerPeerId, now);
+            registerPeerCall(callerPeerId, call);
             call.answer(localStream);
 
             call.on('stream', (remoteStream) => {
                 const displayName = caller ? caller.name : "Player";
-                addVideoFeed(remoteStream, call.peer, displayName, caller ? caller.isDM : false);
+                addVideoFeed(remoteStream, callerPeerId, displayName, caller ? caller.isDM : false);
+            });
+
+            call.on('close', () => {
+                const box = document.getElementById(`video-${callerPeerId}`);
+                if (box && !hasActivePeerCall(callerPeerId)) refreshRemoteMediaStatus(box, null);
             });
 
             call.on('error', (err) => {
                 console.warn("DEBUG: Incoming PeerJS call error:", err);
-                closePeerConnectionsForPeer(call.peer, { removeVideoBox: false });
+                closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
             });
         });
 
