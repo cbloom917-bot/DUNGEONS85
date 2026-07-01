@@ -212,7 +212,6 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
         activePeerCalls.delete(key);
     }
 
-    incomingPeerCallAcceptedAt.delete(key);
 
     if (options.removeVideoBox && Array.isArray(customVideoOrder)) {
         customVideoOrder = customVideoOrder.filter(id => String(id) !== key);
@@ -236,7 +235,6 @@ function closeAllPeerConnections() {
         closePeerConnectionsForPeer(peerId, { removeVideoBox: false });
     });
     activePeerCalls.clear();
-    incomingPeerCallAcceptedAt.clear();
 }
 
 function callPeerWithLocalStream(player, reason = "media-refresh") {

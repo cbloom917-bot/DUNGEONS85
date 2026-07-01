@@ -184,23 +184,12 @@ function initHybridMediaVttStack(roomName, playerName) {
             }
 
             const callerPeerId = String(call.peer || '');
-            const now = Date.now();
-            const lastAcceptedAt = incomingPeerCallAcceptedAt.get(callerPeerId) || 0;
 
-            // PeerJS can deliver duplicate incoming calls during reconnects or
-            // simultaneous media refreshes. Accept the first call and drop
-            // immediate repeats so each remote peer has one active media path.
-            if (now - lastAcceptedAt < PEER_CALL_DEDUPE_WINDOW_MS) {
-                try {
-                    if (call && typeof call.close === 'function') call.close();
-                } catch (err) {
-                    console.warn("DEBUG: Failed to close duplicate PeerJS call:", err);
-                }
-                return;
-            }
-
+            // Keep a single live PeerJS media call per remote peer. If a reconnect
+            // or camera refresh creates a new incoming call, close the old call
+            // before accepting the new one instead of using a second timestamp
+            // dedupe state machine.
             closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
-            incomingPeerCallAcceptedAt.set(callerPeerId, now);
             registerPeerCall(callerPeerId, call);
             call.answer(localStream);
 

@@ -27,8 +27,6 @@ let socket = null;
 let peer = null;
 let localStream = null;
 let activePeerCalls = new Map();
-var incomingPeerCallAcceptedAt = window.incomingPeerCallAcceptedAt || new Map();
-window.incomingPeerCallAcceptedAt = incomingPeerCallAcceptedAt;
 let currentActiveRoomArray = [];
 let localPeerId = null;
 let activeRoomName = '';
@@ -52,7 +50,6 @@ let pendingNoteWorldPosition = null;
 let tableDirty = false;
 
 const TOKEN_MOVE_EMIT_INTERVAL_MS = 75;
-const PEER_CALL_DEDUPE_WINDOW_MS = 1500;
 const VIDEO_CAPTURE_CONSTRAINTS = {
     width: { ideal: 854, max: 1280 },
     height: { ideal: 480, max: 720 },
