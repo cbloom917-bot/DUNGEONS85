@@ -6,9 +6,30 @@
 // ============================================================
 
 
+function ensureCanvasBackingStoreSize() {
+    const nextWidth = Math.floor(canvas.clientWidth || canvas.width || 0);
+    const nextHeight = Math.floor(canvas.clientHeight || canvas.height || 0);
+
+    if (nextWidth > 0 && nextHeight > 0 && (canvas.width !== nextWidth || canvas.height !== nextHeight)) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+        fogCanvas.width = nextWidth;
+        fogCanvas.height = nextHeight;
+    }
+}
+
 function centerMapInView(zoom = DEFAULT_MAP_ZOOM) {
+    ensureCanvasBackingStoreSize();
+
     const nextZoom = Number(zoom);
     tableState.camera.zoom = Number.isFinite(nextZoom) && nextZoom > 0 ? nextZoom : DEFAULT_MAP_ZOOM;
+
+    // Maps are drawn centered on world origin in draw():
+    // ctx.drawImage(mapImgAsset, -mapImgAsset.width / 2, -mapImgAsset.height / 2).
+    // Therefore centering the map means placing world origin at the center of
+    // the current canvas. This helper also refreshes the canvas backing size
+    // first so early map-load syncs do not center against the default 300x150
+    // canvas before the visible VTT layout has resized.
     tableState.camera.x = canvas.width / 2;
     tableState.camera.y = canvas.height / 2;
 }
