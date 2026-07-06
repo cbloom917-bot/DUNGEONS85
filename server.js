@@ -220,7 +220,14 @@ io.on('connection', (socket) => {
         }
 
         state.players = state.players.filter(p => p.socketId !== socket.id);
-        state.players.push({ socketId: socket.id, peerId: String(peerId), name: playerName, isDM });
+        state.players.push({
+            socketId: socket.id,
+            peerId: String(peerId),
+            name: playerName,
+            isDM,
+            micEnabled: false,
+            camEnabled: false
+        });
         incrementCommunityStat('playersSinceLaunch');
 
         if (state.wipeTimer) {
@@ -251,6 +258,21 @@ io.on('connection', (socket) => {
         } else if (!isDM) {
             io.to(currentRoom).emit('playerNotification', `${playerName} HAS JOINED THE TABLE`);
         }
+    });
+
+
+    socket.on('updateMediaState', (mediaState) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!mediaState || typeof mediaState !== 'object') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player) return;
+
+        player.micEnabled = Boolean(mediaState.micEnabled);
+        player.camEnabled = Boolean(mediaState.camEnabled);
+
+        io.to(currentRoom).emit('updatePlayerList', state.players);
     });
 
     socket.on('updateTokensMatrix', (tokens) => {
