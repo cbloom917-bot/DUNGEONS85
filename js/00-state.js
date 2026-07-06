@@ -68,10 +68,18 @@ let sketchToolColors = {
 
 const TOKEN_MOVE_EMIT_INTERVAL_MS = 75;
 const VIDEO_CAPTURE_CONSTRAINTS = {
-    width: { ideal: 854, max: 1280 },
-    height: { ideal: 480, max: 720 },
+    width: { ideal: 640, max: 854 },
+    height: { ideal: 480, max: 480 },
     frameRate: { ideal: 15, max: 20 }
 };
+
+const AUDIO_CAPTURE_CONSTRAINTS = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+};
+
+const VIDEO_SENDER_MAX_BITRATE_BPS = 450000;
 let lastTokenMoveEmitAt = 0;
 let pendingTokenMove = null;
 let pendingTokenMoveTimer = null;

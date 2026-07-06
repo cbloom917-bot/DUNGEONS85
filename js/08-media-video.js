@@ -253,6 +253,38 @@ function closeAllPeerConnections() {
     activePeerCalls.clear();
 }
 
+function applyVttVideoSenderSettings(call) {
+    if (!call || !call.peerConnection || typeof VIDEO_SENDER_MAX_BITRATE_BPS !== 'number') return;
+
+    try {
+        const senders = typeof call.peerConnection.getSenders === 'function'
+            ? call.peerConnection.getSenders()
+            : [];
+
+        senders.forEach(sender => {
+            if (!sender || !sender.track || sender.track.kind !== 'video') return;
+            if (typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
+
+            const parameters = sender.getParameters() || {};
+            if (!parameters.encodings || !parameters.encodings.length) {
+                parameters.encodings = [{}];
+            }
+
+            parameters.encodings[0].maxBitrate = VIDEO_SENDER_MAX_BITRATE_BPS;
+
+            if ('degradationPreference' in parameters) {
+                parameters.degradationPreference = 'maintainResolution';
+            }
+
+            sender.setParameters(parameters).catch(err => {
+                console.warn("DEBUG: Failed to apply VTT video bitrate cap:", err);
+            });
+        });
+    } catch (err) {
+        console.warn("DEBUG: Failed to inspect PeerJS video sender:", err);
+    }
+}
+
 function callPeerWithLocalStream(player, reason = "media-refresh") {
     if (!peer || !localStream || !player || !player.peerId || player.peerId === localPeerId) return null;
     if (!shouldInitiatePeerCall(player.peerId, reason)) return null;
@@ -271,6 +303,7 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         if (!rawCall) return null;
 
         const call = registerPeerCall(player.peerId, rawCall);
+        setTimeout(() => applyVttVideoSenderSettings(call), 0);
 
         call.on('stream', (remoteStream) => {
             addVideoFeed(remoteStream, call.peer, player.name, player.isDM);

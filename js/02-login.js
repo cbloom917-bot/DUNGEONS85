@@ -222,7 +222,7 @@ async function toggleLocalAudio() {
         }
 
         try {
-            const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            const micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CAPTURE_CONSTRAINTS, video: false });
             const audioTrack = micStream.getAudioTracks()[0];
 
             if (audioTrack) {

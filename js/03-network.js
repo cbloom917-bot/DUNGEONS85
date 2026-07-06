@@ -197,6 +197,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
             registerPeerCall(callerPeerId, call);
             call.answer(localStream);
+            setTimeout(() => applyVttVideoSenderSettings(call), 0);
 
             call.on('stream', (remoteStream) => {
                 const displayName = caller ? caller.name : "Player";
