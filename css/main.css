@@ -204,6 +204,17 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 .gm-room-note { font-size: 11px; color: #fff; text-align: center; margin-top: -0.5rem; margin-bottom: 0.75rem; }
 
+.community-counter {
+    font-size: 11px;
+    color: #fff;
+    text-align: center;
+    margin-top: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    min-height: 14px;
+}
+
+
 .note-editor {
     position: absolute;
     width: 260px;
