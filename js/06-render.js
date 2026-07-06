@@ -87,8 +87,17 @@ function drawMapNotes(viewLeft, viewRight, viewTop, viewBottom) {
                 ctx.fillStyle = '#ff3333';
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 4;
-                ctx.strokeText('!', noteX, noteY);
-                ctx.fillText('!', noteX, noteY);
+
+                let markerX = noteX;
+                if (label) {
+                    ctx.font = 'bold 16px monospace';
+                    const labelWidth = ctx.measureText(label).width + 12;
+                    markerX = noteX - labelWidth / 2 - 14;
+                    ctx.font = 'bold 26px monospace';
+                }
+
+                ctx.strokeText('!', markerX, noteY);
+                ctx.fillText('!', markerX, noteY);
                 ctx.restore();
             }
         });
