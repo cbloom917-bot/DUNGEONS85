@@ -11,6 +11,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     hasReceivedInitialFoWSync = false;
     hasReceivedInitialMapSync = false;
     hasReceivedInitialNotesSync = false;
+    hasReceivedInitialSketchSync = false;
 
     if (socket) {
         socket.disconnect();
@@ -403,6 +404,21 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             hasReceivedInitialNotesSync = true;
             tableState.notes = serverNotes;
+            draw();
+        });
+
+
+        socket.on('syncSketches', (incomingSketches) => {
+            const serverSketches = Array.isArray(incomingSketches) ? incomingSketches : [];
+            const hasLocalSketches = Array.isArray(tableState.sketches) && tableState.sketches.length > 0;
+
+            if (tableState.isDM && hasReceivedInitialSketchSync && hasLocalSketches) {
+                console.warn("DEBUG: Ignoring syncSketches after GM reconnect to protect local sketches state.");
+                return;
+            }
+
+            hasReceivedInitialSketchSync = true;
+            tableState.sketches = serverSketches;
             draw();
         });
 

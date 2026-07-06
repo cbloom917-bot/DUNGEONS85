@@ -47,6 +47,66 @@ function getCurrentCameraCenterWorld() {
         centerY: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom
     };
 }
+
+function drawSketchShape(sketch, isDraft = false) {
+        if (!sketch || !['line', 'circle', 'rect'].includes(sketch.type)) return;
+
+        const x1 = Number(sketch.x1) || 0;
+        const y1 = Number(sketch.y1) || 0;
+        const x2 = Number(sketch.x2) || 0;
+        const y2 = Number(sketch.y2) || 0;
+
+        ctx.save();
+        ctx.strokeStyle = String(sketch.color || '#000000');
+        ctx.lineWidth = 3 / tableState.camera.zoom;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (isDraft) ctx.setLineDash([8 / tableState.camera.zoom, 5 / tableState.camera.zoom]);
+
+        if (sketch.type === 'line') {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        } else if (sketch.type === 'rect') {
+            ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+        } else if (sketch.type === 'circle') {
+            const centerX = (x1 + x2) / 2;
+            const centerY = (y1 + y2) / 2;
+            const radiusX = Math.abs(x2 - x1) / 2;
+            const radiusY = Math.abs(y2 - y1) / 2;
+
+            if (radiusX > 0 && radiusY > 0) {
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        ctx.restore();
+    }
+
+function drawSketches(viewLeft, viewRight, viewTop, viewBottom) {
+        if (!Array.isArray(tableState.sketches)) tableState.sketches = [];
+
+        tableState.sketches.forEach(sketch => {
+            const minX = Math.min(Number(sketch.x1) || 0, Number(sketch.x2) || 0);
+            const maxX = Math.max(Number(sketch.x1) || 0, Number(sketch.x2) || 0);
+            const minY = Math.min(Number(sketch.y1) || 0, Number(sketch.y2) || 0);
+            const maxY = Math.max(Number(sketch.y1) || 0, Number(sketch.y2) || 0);
+
+            if (maxX < viewLeft - 80 || minX > viewRight + 80 || maxY < viewTop - 80 || minY > viewBottom + 80) {
+                return;
+            }
+
+            drawSketchShape(sketch);
+        });
+
+        if (tableState.isDM && sketchDraft) {
+            drawSketchShape(sketchDraft, true);
+        }
+    }
+
 function drawMapNotes(viewLeft, viewRight, viewTop, viewBottom) {
         if (!Array.isArray(tableState.notes)) return;
 
@@ -152,6 +212,7 @@ async function draw() {
         }
 
 
+        drawSketches(viewLeft, viewRight, viewTop, viewBottom);
         drawMapNotes(viewLeft, viewRight, viewTop, viewBottom);
 
 

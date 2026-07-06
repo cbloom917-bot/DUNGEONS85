@@ -17,6 +17,7 @@ let tableState = {
     mapSrc: null,
     tokens: [],
     notes: [],
+    sketches: [],
     camera: { x: 0, y: 0, zoom: 1 },
     fowEnabled: false,
     fowPolygons: [],
@@ -45,10 +46,25 @@ let hasReceivedInitialTokenSync = false;
 let hasReceivedInitialFoWSync = false;
 let hasReceivedInitialMapSync = false;
 let hasReceivedInitialNotesSync = false;
+let hasReceivedInitialSketchSync = false;
 let notesVisible = false;
 let openNoteId = null;
 let pendingNoteWorldPosition = null;
 let tableDirty = false;
+
+let activeSketchTool = null;
+let sketchDraft = null;
+const SKETCH_COLORS = [
+    { name: 'black', value: '#000000' },
+    { name: 'blue', value: '#0066ff' },
+    { name: 'red', value: '#ff3333' },
+    { name: 'white', value: '#ffffff' }
+];
+let sketchToolColors = {
+    line: 0,
+    circle: 0,
+    rect: 0
+};
 
 const TOKEN_MOVE_EMIT_INTERVAL_MS = 75;
 const VIDEO_CAPTURE_CONSTRAINTS = {

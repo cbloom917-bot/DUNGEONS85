@@ -73,6 +73,113 @@ function findNoteAt(worldX, worldY) {
     }
 
 
+function normalizeSketchEndPoint(startX, startY, endX, endY, type, constrain) {
+        if (!constrain) return { x: endX, y: endY };
+
+        const dx = endX - startX;
+        const dy = endY - startY;
+
+        if (type === 'line') {
+            const angle = Math.atan2(dy, dx);
+            const distance = Math.hypot(dx, dy);
+            const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            return {
+                x: startX + Math.cos(snappedAngle) * distance,
+                y: startY + Math.sin(snappedAngle) * distance
+            };
+        }
+
+        if (type === 'rect' || type === 'circle') {
+            const size = Math.max(Math.abs(dx), Math.abs(dy));
+            return {
+                x: startX + Math.sign(dx || 1) * size,
+                y: startY + Math.sign(dy || 1) * size
+            };
+        }
+
+        return { x: endX, y: endY };
+    }
+
+function createSketchFromDraft(draft) {
+        if (!draft) return null;
+
+        return {
+            id: `sketch-${Date.now()}-${Math.random()}`,
+            type: draft.type,
+            x1: draft.x1,
+            y1: draft.y1,
+            x2: draft.x2,
+            y2: draft.y2,
+            color: draft.color
+        };
+    }
+
+function getSketchBounds(sketch) {
+        const x1 = Number(sketch.x1) || 0;
+        const y1 = Number(sketch.y1) || 0;
+        const x2 = Number(sketch.x2) || 0;
+        const y2 = Number(sketch.y2) || 0;
+        return {
+            minX: Math.min(x1, x2),
+            maxX: Math.max(x1, x2),
+            minY: Math.min(y1, y2),
+            maxY: Math.max(y1, y2),
+            x1,
+            y1,
+            x2,
+            y2
+        };
+    }
+
+function distanceToLineSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lengthSq = dx * dx + dy * dy;
+
+        if (!lengthSq) return Math.hypot(px - x1, py - y1);
+
+        let t = ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+        t = Math.max(0, Math.min(1, t));
+
+        return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    }
+
+function findSketchAt(worldX, worldY) {
+        if (!tableState.isDM || !Array.isArray(tableState.sketches)) return null;
+
+        const hitPadding = 10 / tableState.camera.zoom;
+
+        for (let i = tableState.sketches.length - 1; i >= 0; i--) {
+            const sketch = tableState.sketches[i];
+            const bounds = getSketchBounds(sketch);
+
+            if (sketch.type === 'line') {
+                if (distanceToLineSegment(worldX, worldY, bounds.x1, bounds.y1, bounds.x2, bounds.y2) <= hitPadding) return sketch;
+            } else if (sketch.type === 'rect') {
+                const nearHorizontal = worldX >= bounds.minX - hitPadding && worldX <= bounds.maxX + hitPadding &&
+                    (Math.abs(worldY - bounds.minY) <= hitPadding || Math.abs(worldY - bounds.maxY) <= hitPadding);
+                const nearVertical = worldY >= bounds.minY - hitPadding && worldY <= bounds.maxY + hitPadding &&
+                    (Math.abs(worldX - bounds.minX) <= hitPadding || Math.abs(worldX - bounds.maxX) <= hitPadding);
+                if (nearHorizontal || nearVertical) return sketch;
+            } else if (sketch.type === 'circle') {
+                const centerX = (bounds.x1 + bounds.x2) / 2;
+                const centerY = (bounds.y1 + bounds.y2) / 2;
+                const radiusX = Math.abs(bounds.x2 - bounds.x1) / 2;
+                const radiusY = Math.abs(bounds.y2 - bounds.y1) / 2;
+                if (radiusX > 0 && radiusY > 0) {
+                    const normalized = Math.sqrt(
+                        Math.pow((worldX - centerX) / radiusX, 2) +
+                        Math.pow((worldY - centerY) / radiusY, 2)
+                    );
+                    if (Math.abs(normalized - 1) <= 0.12 + hitPadding / Math.max(radiusX, radiusY)) return sketch;
+                }
+            }
+        }
+
+        return null;
+    }
+
+
     canvas.addEventListener('contextmenu', (e) => {
         if (!tableState.isDM) return; 
         e.preventDefault();
@@ -82,6 +189,12 @@ function findNoteAt(worldX, worldY) {
             currentFoWPolygon = [];
             isDrawingFoW = false;
             updateFogUI();
+            draw();
+            return;
+        }
+
+        if (sketchDraft) {
+            sketchDraft = null;
             draw();
             return;
         }
@@ -108,6 +221,34 @@ function findNoteAt(worldX, worldY) {
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
 
+
+        if (tableState.isDM && activeSketchTool) {
+            if (activeSketchTool === 'eraser') {
+                const sketch = findSketchAt(worldX, worldY);
+                if (sketch) {
+                    tableState.sketches = tableState.sketches.filter(item => item.id !== sketch.id);
+                    markTableDirty();
+                    broadcastSketches();
+                    draw();
+                }
+                return;
+            }
+
+            const activeColor = SKETCH_COLORS[sketchToolColors[activeSketchTool] || 0];
+            sketchDraft = {
+                type: activeSketchTool,
+                x1: worldX,
+                y1: worldY,
+                x2: worldX,
+                y2: worldY,
+                color: activeColor.value
+            };
+            isDraggingWorkspace = false;
+            selectedToken = null;
+            tokenDragChanged = false;
+            draw();
+            return;
+        }
 
         const clickedNote = findNoteAt(worldX, worldY);
         if (clickedNote) {
@@ -162,6 +303,14 @@ function findNoteAt(worldX, worldY) {
         currentMouseWorldY = (mouseY - tableState.camera.y) / tableState.camera.zoom;
 
 
+        if (tableState.isDM && sketchDraft) {
+            const nextPoint = normalizeSketchEndPoint(sketchDraft.x1, sketchDraft.y1, currentMouseWorldX, currentMouseWorldY, sketchDraft.type, e.shiftKey);
+            sketchDraft.x2 = nextPoint.x;
+            sketchDraft.y2 = nextPoint.y;
+            draw();
+            return;
+        }
+
         if (tableState.isDM && isDrawingFoW && currentFoWPolygon.length > 0) {
             draw(); 
         }
@@ -188,7 +337,27 @@ function findNoteAt(worldX, worldY) {
     });
 
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (e) => {
+        if (tableState.isDM && sketchDraft) {
+            const rect = canvas.getBoundingClientRect();
+            const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
+            const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
+            const nextPoint = normalizeSketchEndPoint(sketchDraft.x1, sketchDraft.y1, worldX, worldY, sketchDraft.type, e.shiftKey);
+            sketchDraft.x2 = nextPoint.x;
+            sketchDraft.y2 = nextPoint.y;
+
+            if (Math.hypot(sketchDraft.x2 - sketchDraft.x1, sketchDraft.y2 - sketchDraft.y1) > 2 / tableState.camera.zoom) {
+                if (!Array.isArray(tableState.sketches)) tableState.sketches = [];
+                tableState.sketches.push(createSketchFromDraft(sketchDraft));
+                markTableDirty();
+                broadcastSketches();
+            }
+
+            sketchDraft = null;
+            draw();
+            return;
+        }
+
         if (selectedToken && tokenDragChanged) {
             markTableDirty();
             queueTokenMove(selectedToken, true);
@@ -198,7 +367,7 @@ function findNoteAt(worldX, worldY) {
 
 
     canvas.addEventListener('dblclick', (e) => {
-        if (!tableState.isDM || !notesVisible || isDrawingFoW) return;
+        if (!tableState.isDM || !notesVisible || isDrawingFoW || activeSketchTool) return;
 
         const { worldX, worldY } = getWorldPointFromMouseEvent(e);
 

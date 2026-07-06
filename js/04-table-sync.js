@@ -29,6 +29,7 @@ function broadcastFullTableState() {
         broadcastTokensMatrixChange();
         broadcastFoW();
         broadcastNotes();
+        broadcastSketches();
     }
 
 function toggleFogMode() {
@@ -100,6 +101,88 @@ function updateFogUI() {
         btnDraw.style.borderColor = "#fff";
         document.getElementById('vtt-canvas').classList.remove('plotting');
     }
+}
+
+
+function sanitizeSketchesForBroadcast() {
+    if (!Array.isArray(tableState.sketches)) tableState.sketches = [];
+
+    return tableState.sketches.map(sketch => ({
+        id: String(sketch.id),
+        type: String(sketch.type || ''),
+        x1: Number(sketch.x1) || 0,
+        y1: Number(sketch.y1) || 0,
+        x2: Number(sketch.x2) || 0,
+        y2: Number(sketch.y2) || 0,
+        color: String(sketch.color || '#000000')
+    })).filter(sketch => ['line', 'circle', 'rect'].includes(sketch.type));
+}
+
+function broadcastSketches() {
+    if (!tableState.isDM || !socket) return;
+    socket.emit('updateSketches', sanitizeSketchesForBroadcast());
+}
+
+function getSketchToolButton(tool) {
+    return document.getElementById(`btn-sketch-${tool}`);
+}
+
+function updateSketchToolUI() {
+    ['line', 'circle', 'rect', 'eraser'].forEach(tool => {
+        const btn = getSketchToolButton(tool);
+        if (!btn) return;
+
+        btn.classList.toggle('active', activeSketchTool === tool);
+        btn.classList.remove('sketch-color-white');
+        btn.style.removeProperty('--sketch-icon-color');
+
+        if (activeSketchTool !== tool) {
+            btn.style.color = '';
+            return;
+        }
+
+        if (tool === 'eraser') {
+            btn.style.setProperty('--sketch-icon-color', '#000000');
+            return;
+        }
+
+        const color = SKETCH_COLORS[sketchToolColors[tool] || 0];
+        btn.style.setProperty('--sketch-icon-color', color.value);
+        if (color.name === 'white') btn.classList.add('sketch-color-white');
+    });
+
+    const canvasEl = document.getElementById('vtt-canvas');
+    if (canvasEl) {
+        canvasEl.classList.toggle('sketching', !!activeSketchTool && activeSketchTool !== 'eraser');
+        canvasEl.classList.toggle('erasing-sketch', activeSketchTool === 'eraser');
+    }
+}
+
+function selectSketchTool(tool) {
+    if (!tableState.isDM) return;
+    if (!['line', 'circle', 'rect', 'eraser'].includes(tool)) return;
+
+    if (activeSketchTool === tool && tool !== 'eraser') {
+        sketchToolColors[tool] = ((sketchToolColors[tool] || 0) + 1) % SKETCH_COLORS.length;
+    } else {
+        activeSketchTool = tool;
+        sketchDraft = null;
+        if (isDrawingFoW) {
+            isDrawingFoW = false;
+            currentFoWPolygon = [];
+            updateFogUI();
+        }
+    }
+
+    updateSketchToolUI();
+    draw();
+}
+
+function clearSketchTool() {
+    activeSketchTool = null;
+    sketchDraft = null;
+    updateSketchToolUI();
+    draw();
 }
 
 
