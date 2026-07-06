@@ -163,7 +163,15 @@ function selectSketchTool(tool) {
     if (!['line', 'circle', 'rect', 'eraser'].includes(tool)) return;
 
     if (activeSketchTool === tool && tool !== 'eraser') {
-        sketchToolColors[tool] = ((sketchToolColors[tool] || 0) + 1) % SKETCH_COLORS.length;
+        const currentColorIndex = sketchToolColors[tool] || 0;
+        const nextColorIndex = currentColorIndex + 1;
+
+        if (nextColorIndex >= SKETCH_COLORS.length) {
+            clearSketchTool();
+            return;
+        }
+
+        sketchToolColors[tool] = nextColorIndex;
     } else {
         activeSketchTool = tool;
         sketchDraft = null;

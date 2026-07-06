@@ -71,7 +71,12 @@ function applyDmRoomMode(mode) {
         setDmCharacterNameForMode("create");
     }
 
-    if (gmRoomNote) gmRoomNote.classList.toggle('hidden', gmRoomMode !== "create");
+    if (gmRoomNote) {
+        gmRoomNote.classList.remove('hidden');
+        gmRoomNote.textContent = gmRoomMode === "rejoin"
+            ? "Rejoins, if active, or creates an empty table using the last used name."
+            : "Creates a new table and replaces your saved table.";
+    }
     refreshDmRoomModeButtons();
 }
 
