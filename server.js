@@ -53,6 +53,27 @@ function getPublicNotes(notes) {
         }));
 }
 
+
+function sanitizeSketch(sketch) {
+    if (!sketch || typeof sketch !== 'object') return null;
+
+    const type = String(sketch.type || '');
+    if (!['line', 'circle', 'rect'].includes(type)) return null;
+
+    const color = String(sketch.color || '#000000');
+    const allowedColors = new Set(['#000000', '#0066ff', '#ff3333', '#ffffff']);
+
+    return {
+        id: String(sketch.id || `sketch-${Date.now()}-${Math.random()}`),
+        type,
+        x1: Number(sketch.x1) || 0,
+        y1: Number(sketch.y1) || 0,
+        x2: Number(sketch.x2) || 0,
+        y2: Number(sketch.y2) || 0,
+        color: allowedColors.has(color.toLowerCase()) ? color.toLowerCase() : '#000000'
+    };
+}
+
 function emitNotesToRoom(roomName, sourceSocketId = null) {
     const state = roomCampaignStates[roomName];
     if (!state) return;
@@ -120,6 +141,7 @@ io.on('connection', (socket) => {
                 fowPolygons: [],
                 isDarknessActive: false,
                 notes: [],
+                sketches: [],
                 initiativePeerId: null,
                 videoOrder: []
             };
@@ -152,6 +174,7 @@ io.on('connection', (socket) => {
             darkness: state.isDarknessActive 
         });
         socket.emit('syncNotes', isDM ? state.notes : getPublicNotes(state.notes));
+        socket.emit('syncSketches', state.sketches || []);
 
         socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
         socket.emit('syncVideoOrder', state.videoOrder || []);
@@ -323,6 +346,25 @@ io.on('connection', (socket) => {
             .slice(0, 500);
 
         emitNotesToRoom(currentRoom, socket.id);
+    });
+
+
+    socket.on('updateSketches', (sketches) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!Array.isArray(sketches)) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+
+        // Only the GM can create, erase, or broadcast map sketches.
+        if (!player || !player.isDM) return;
+
+        state.sketches = sketches
+            .map(sanitizeSketch)
+            .filter(Boolean)
+            .slice(0, 500);
+
+        socket.broadcast.to(currentRoom).emit('syncSketches', state.sketches);
     });
 
     socket.on('executeDiceRoll', (rollData) => {

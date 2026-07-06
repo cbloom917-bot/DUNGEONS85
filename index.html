@@ -92,6 +92,12 @@
         <button onclick="toggleTorchPanel()" class="tool-btn">Torch Timer</button>
         <button onclick="toggleTurnTracker()" class="tool-btn">Turn Tracker</button>
         <button onclick="toggleFogPanel()" class="tool-btn">Fog of War</button>
+        <div class="sketch-tool-row" aria-label="Sketch tools">
+            <button type="button" onclick="selectSketchTool('line')" id="btn-sketch-line" class="tool-btn sketch-tool-btn" title="Line">/</button>
+            <button type="button" onclick="selectSketchTool('circle')" id="btn-sketch-circle" class="tool-btn sketch-tool-btn" title="Circle">○</button>
+            <button type="button" onclick="selectSketchTool('rect')" id="btn-sketch-rect" class="tool-btn sketch-tool-btn" title="Rectangle">□</button>
+            <button type="button" onclick="selectSketchTool('eraser')" id="btn-sketch-eraser" class="tool-btn sketch-tool-btn" title="Erase Sketch">⌫</button>
+        </div>
         <button onclick="forcePlayerFocus()" class="tool-btn">Focus View</button>
         <button onclick="toggleNotesVisibility()" id="btn-notes-toggle" class="tool-btn">SHOW NOTES</button>
 
