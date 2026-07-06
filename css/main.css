@@ -266,3 +266,41 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     background: #ff3333;
     color: #fff;
 }
+
+
+.sketch-tool-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.25rem;
+}
+
+.sketch-tool-btn {
+    width: 100%;
+    min-height: 28px;
+    font-size: 18px;
+    line-height: 1;
+    margin-bottom: 4px;
+    padding: 0.2rem 0;
+}
+
+.sketch-tool-btn.active {
+    background: #fff;
+    color: var(--sketch-icon-color, #000);
+}
+
+.sketch-tool-btn.active.sketch-color-white {
+    text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+}
+
+.sketch-tool-btn.active:hover {
+    background: #fff;
+    color: var(--sketch-icon-color, #000);
+}
+
+#vtt-canvas.sketching {
+    cursor: crosshair !important;
+}
+
+#vtt-canvas.erasing-sketch {
+    cursor: not-allowed !important;
+}
