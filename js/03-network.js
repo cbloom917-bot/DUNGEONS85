@@ -152,8 +152,6 @@ function initHybridMediaVttStack(roomName, playerName) {
                 ensurePlayerVideoSeat(p);
             });
 
-            publishLocalMediaState();
-
             playersArray.forEach(p => {
                 const wasKnown = previousPlayers.some(existing => existing.peerId === p.peerId);
 
