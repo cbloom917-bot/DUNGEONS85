@@ -74,8 +74,8 @@ function applyDmRoomMode(mode) {
     if (gmRoomNote) {
         gmRoomNote.classList.remove('hidden');
         gmRoomNote.textContent = gmRoomMode === "rejoin"
-            ? "Rejoins, if active, or creates an empty table using the last used name."
-            : "Creates a new table and replaces your saved table.";
+            ? "Rejoins or creates an empty table with last used name."
+            : "Create a new table and replace your saved table.";
     }
     refreshDmRoomModeButtons();
 }
