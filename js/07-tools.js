@@ -39,14 +39,30 @@ function executeDiceOverlayAnimation(sides, result, rollerName, posX, posY) {
     }
 
 
+function appendTickerLabel(logEntry, labelText) {
+        const label = document.createElement('span');
+        label.textContent = labelText;
+        logEntry.appendChild(label);
+    }
+
+
 function addResultToHistoryTicker(player, sides, result) {
         const ticker = document.getElementById('ticker-log');
         const emptyMsg = document.getElementById('ticker-empty-msg');
         if (emptyMsg) emptyMsg.remove();
-        const logEntry = document.createElement('div'); logEntry.className = 'ticker-entry';
-        logEntry.innerHTML = sides === 0 
-            ? `<span>[SYS]</span> ${result}`
-            : `<span>[${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}]</span> ${player} ROLLED D${sides}: ${result}`;
+
+        const logEntry = document.createElement('div');
+        logEntry.className = 'ticker-entry';
+
+        if (sides === 0) {
+            appendTickerLabel(logEntry, '[SYS]');
+            logEntry.appendChild(document.createTextNode(` ${String(result ?? '')}`));
+        } else {
+            const timestamp = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+            appendTickerLabel(logEntry, `[${timestamp}]`);
+            logEntry.appendChild(document.createTextNode(` ${String(player ?? 'Player')} ROLLED D${sides}: ${String(result ?? '')}`));
+        }
+
         ticker.appendChild(logEntry);
         ticker.scrollLeft = ticker.scrollWidth;
     }
@@ -125,6 +141,16 @@ function toggleTurnTracker() {
     }
 
 
+function setTurnMessage(msgDiv, lines) {
+        msgDiv.replaceChildren();
+
+        lines.forEach((line, index) => {
+            if (index > 0) msgDiv.appendChild(document.createElement('br'));
+            msgDiv.appendChild(document.createTextNode(line));
+        });
+    }
+
+
 function checkTurn(boxNum) {
         const box = document.getElementById(`turn-box-${boxNum}`);
         const msgDiv = document.getElementById('turn-message');
@@ -132,18 +158,18 @@ function checkTurn(boxNum) {
 
         if (box.classList.contains('checked')) {
             box.classList.remove('checked');
-            msgDiv.innerHTML = ""; 
+            msgDiv.replaceChildren();
         } else {
             box.classList.add('checked');
             const messages = {
-                1: "TURN 1 ELAPSED",
-                2: "W: WANDERING MONSTER CHECK",
-                3: "TURN 3 ELAPSED",
-                4: "W: WANDERING MONSTER CHECK",
-                5: "TURN 5 ELAPSED",
-                6: "W: WANDERING MONSTER CHECK<br>R: PARTY MUST REST FOR 1 TURN<br>T: TORCH EXPIRES"
+                1: ["TURN 1 ELAPSED"],
+                2: ["W: WANDERING MONSTER CHECK"],
+                3: ["TURN 3 ELAPSED"],
+                4: ["W: WANDERING MONSTER CHECK"],
+                5: ["TURN 5 ELAPSED"],
+                6: ["W: WANDERING MONSTER CHECK", "R: PARTY MUST REST FOR 1 TURN", "T: TORCH EXPIRES"]
             };
-            msgDiv.innerHTML = messages[boxNum];
+            setTurnMessage(msgDiv, messages[boxNum] || []);
         }
     }
 
@@ -152,7 +178,7 @@ function resetTurns() {
         for(let i = 1; i <= 6; i++) {
             document.getElementById(`turn-box-${i}`).classList.remove('checked');
         }
-        document.getElementById('turn-message').innerHTML = "";
+        document.getElementById('turn-message').replaceChildren();
     }
 
 
