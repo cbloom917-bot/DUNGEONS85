@@ -13,6 +13,18 @@ function getExportTimestamp() {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
 }
 
+function normalizeD85Filename(value, fallback) {
+    const raw = String(value || '').trim();
+    const baseName = raw || fallback;
+    const safeName = baseName
+        .replace(/\.d85$/i, '')
+        .replace(/[^a-z0-9 _.-]+/gi, '')
+        .trim()
+        .substring(0, 80) || fallback;
+
+    return `${safeName}.d85`;
+}
+
 function exportTableState() {
     const stateString = JSON.stringify(tableState);
     const compressedData = pako.deflate(stateString);
@@ -21,8 +33,11 @@ function exportTableState() {
     const a = document.createElement('a');
 
     const roomName = sanitizeFilenamePart(activeRoomName || localStorage.getItem('d85LastRoomName') || 'DUNGEONS85');
+    const defaultFilename = `${roomName}_${getExportTimestamp()}`;
+    const requestedFilename = prompt('Save .d85 filename:', `${defaultFilename}.d85`);
+
     a.href = url;
-    a.download = `${roomName}[${getExportTimestamp()}].d85`;
+    a.download = normalizeD85Filename(requestedFilename, defaultFilename);
 
     document.body.appendChild(a);
     a.click();

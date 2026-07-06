@@ -90,6 +90,6 @@ const ctxMenu = document.getElementById('ctx-menu');
 const fogCanvas = document.createElement('canvas');
 const fogCtx = fogCanvas.getContext('2d');
 
-const adjectives = ["Dark", "Iron", "Black", "Silent", "Bitter", "Deep", "Lost", "Fallen", "Death", "Broken"];
-const nouns = ["Crypt", "Spawn", "Vault", "Temple", "Bloom", "Pit", "Crawl", "Keep", "Void", "Abyss"];
+const adjectives = ["Bitter", "Black", "Bleak", "Broken", "Cold", "Crimson", "Crooked", "Cursed", "Dark", "Death", "Deep", "Fallen", "Forgotten", "Frozen", "Golden", "Hollow", "Iron", "Lost", "Shattered", "Silent", "Storm", "Sunken", "Thorn"];
+const nouns = ["Abyss", "Barrow", "Bastion", "Bloom", "Bog", "Cairn", "Cavern", "Crawl", "Crypt", "Fen", "Forest", "Fortress", "Keep", "Marsh", "Mire", "Moor", "Pit", "Shrine", "Spawn", "Temple", "Tower", "Vale", "Vault", "Void", "Warren"];
 

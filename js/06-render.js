@@ -62,15 +62,20 @@ function drawMapNotes(viewLeft, viewRight, viewTop, viewBottom) {
             if (label) {
                 ctx.save();
                 ctx.font = 'bold 16px monospace';
-                ctx.textBaseline = 'top';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
                 const width = ctx.measureText(label).width;
+                const labelWidth = width + 12;
+                const labelHeight = 22;
+                const labelX = noteX - labelWidth / 2;
+                const labelY = noteY - labelHeight / 2;
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
-                ctx.fillRect(noteX + 10, noteY - 8, width + 8, 22);
+                ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 1;
-                ctx.strokeRect(noteX + 10, noteY - 8, width + 8, 22);
+                ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
                 ctx.fillStyle = '#fff';
-                ctx.fillText(label, noteX + 14, noteY - 5);
+                ctx.fillText(label, noteX, noteY);
                 ctx.restore();
             }
 

@@ -18,6 +18,16 @@ function generateRandomRoomName(force = false) {
     roomInput.value = `${adj}${noun}${num}`;
 }
 
+function setRoomNameInputMode(isDMSelection) {
+    const roomInput = document.getElementById('room-id-input');
+    if (!roomInput) return;
+
+    // DMs use generated table names only. Players still type the room name they were given.
+    roomInput.readOnly = !!isDMSelection;
+    roomInput.classList.toggle('readonly-room-name', !!isDMSelection);
+    roomInput.title = isDMSelection ? 'Generated table names only' : '';
+}
+
 function setDmCharacterNameForMode(mode) {
     const nameInput = document.getElementById('char-name-input');
     if (!nameInput) return;
@@ -75,6 +85,7 @@ function setRoleSelection(isDMSelection) {
 
     if (dmButton) dmButton.classList.toggle('active', isDMSelection);
     if (playerButton) playerButton.classList.toggle('active', !isDMSelection);
+    setRoomNameInputMode(isDMSelection);
 
     if (isDMSelection) {
         if (gmRoomModeBox) gmRoomModeBox.classList.remove('hidden');
