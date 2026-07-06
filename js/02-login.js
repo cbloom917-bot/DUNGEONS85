@@ -58,6 +58,7 @@ function refreshDmRoomModeButtons() {
 
 function applyDmRoomMode(mode) {
     const roomInput = document.getElementById('room-id-input');
+    const gmRoomNote = document.getElementById('gm-room-note');
     const lastRoom = localStorage.getItem('d85LastRoomName');
 
     if (mode === "rejoin" && lastRoom && roomInput) {
@@ -70,6 +71,7 @@ function applyDmRoomMode(mode) {
         setDmCharacterNameForMode("create");
     }
 
+    if (gmRoomNote) gmRoomNote.classList.toggle('hidden', gmRoomMode !== "create");
     refreshDmRoomModeButtons();
 }
 
@@ -97,6 +99,31 @@ function setRoleSelection(isDMSelection) {
         if (gmRoomNote) gmRoomNote.classList.add('hidden');
         if (roomInput) roomInput.value = "";
         if (nameInput) nameInput.value = localStorage.getItem('d85LastPlayerName') || "";
+    }
+}
+
+
+function formatCommunityCount(value, singular, plural) {
+    const count = Number(value) || 0;
+    return `${count.toLocaleString()} ${count === 1 ? singular : plural}`;
+}
+
+async function refreshCommunityCounter() {
+    const counter = document.getElementById('community-counter');
+    if (!counter) return;
+
+    try {
+        const response = await fetch('/community-stats', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const stats = await response.json();
+        const players = formatCommunityCount(stats.playersSinceLaunch, 'Player', 'Players');
+        const tables = formatCommunityCount(stats.tablesSinceLaunch, 'Table', 'Tables');
+
+        counter.textContent = `${players} at ${tables} Since Launch`;
+    } catch (err) {
+        console.warn('Unable to load community counter:', err);
+        counter.textContent = '';
     }
 }
 
@@ -176,6 +203,7 @@ function initializeClient() {
 
     bindLoginControls();
     bindJoinButton();
+    refreshCommunityCounter();
     draw();
 }
 
