@@ -249,6 +249,8 @@ async function toggleLocalAudio() {
                 showLocalMediaStatus("mic", "MIC OFF");
             }
 
+            publishLocalMediaState();
+
             // Audio mute/unmute only toggles the existing track. Do not refresh
             // PeerJS calls here; renegotiating on mute caused remote videos to blink.
             return;
@@ -270,6 +272,7 @@ async function toggleLocalAudio() {
                 }
 
                 clearLocalMediaStatus("mic");
+                publishLocalMediaState();
                 console.log("DEBUG: Microphone permission granted on demand.");
                 // First microphone permission should not refresh PeerJS calls.
                 // The joining client may already be receiving video-only streams;
@@ -308,6 +311,8 @@ async function toggleLocalVideo() {
                 showLocalMediaStatus("cam", "CAMERA OFF");
             }
 
+            publishLocalMediaState();
+
             // Existing camera tracks can be enabled/disabled in place. Do not
             // rebuild PeerJS calls here; renegotiating on every camera toggle
             // causes remote feeds to blink or briefly disappear.
@@ -330,6 +335,7 @@ async function toggleLocalVideo() {
                 }
 
                 clearLocalMediaStatus("cam");
+                publishLocalMediaState();
                 console.log("DEBUG: Camera permission granted on demand.");
                 refreshPeerMediaConnections("camera-permission");
             }

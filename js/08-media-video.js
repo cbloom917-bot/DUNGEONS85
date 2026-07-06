@@ -168,6 +168,37 @@ function hasLocalMediaTracks() {
     );
 }
 
+function getLocalMediaState() {
+    const audioTracks = localStream && typeof localStream.getAudioTracks === 'function'
+        ? localStream.getAudioTracks()
+        : [];
+    const videoTracks = localStream && typeof localStream.getVideoTracks === 'function'
+        ? localStream.getVideoTracks()
+        : [];
+
+    return {
+        micEnabled: audioTracks.some(track => track && track.enabled && track.readyState !== 'ended'),
+        camEnabled: videoTracks.some(track => track && track.enabled && track.readyState !== 'ended')
+    };
+}
+
+function publishLocalMediaState() {
+    if (!socket || typeof socket.emit !== 'function') return;
+    socket.emit('updateMediaState', getLocalMediaState());
+}
+
+function applyPlayerMediaStateToVideoBox(box, player) {
+    if (!box || !player) return;
+
+    if (typeof player.micEnabled === 'boolean') {
+        box.dataset.micEnabled = player.micEnabled ? 'true' : 'false';
+    }
+
+    if (typeof player.camEnabled === 'boolean') {
+        box.dataset.camEnabled = player.camEnabled ? 'true' : 'false';
+    }
+}
+
 function shouldInitiatePeerCall(remotePeerId, reason = "media-refresh") {
     if (!localPeerId || !remotePeerId || String(remotePeerId) === String(localPeerId)) return false;
 
@@ -360,10 +391,25 @@ function refreshRemoteMediaStatus(box, stream) {
     if (!box) return;
 
     const messages = [];
-    const audioTracks = stream && typeof stream.getAudioTracks === 'function' ? stream.getAudioTracks() : [];
-    const videoTracks = stream && typeof stream.getVideoTracks === 'function' ? stream.getVideoTracks() : [];
-    const hasLiveAudio = audioTracks.some(track => track.enabled && track.readyState !== 'ended');
-    const hasLiveVideo = videoTracks.some(track => track.enabled && track.readyState !== 'ended');
+    const hasDeclaredMicState = box.dataset.micEnabled === 'true' || box.dataset.micEnabled === 'false';
+    const hasDeclaredCamState = box.dataset.camEnabled === 'true' || box.dataset.camEnabled === 'false';
+
+    let hasLiveAudio;
+    let hasLiveVideo;
+
+    if (hasDeclaredMicState) {
+        hasLiveAudio = box.dataset.micEnabled === 'true';
+    } else {
+        const audioTracks = stream && typeof stream.getAudioTracks === 'function' ? stream.getAudioTracks() : [];
+        hasLiveAudio = audioTracks.some(track => track.enabled && track.readyState !== 'ended');
+    }
+
+    if (hasDeclaredCamState) {
+        hasLiveVideo = box.dataset.camEnabled === 'true';
+    } else {
+        const videoTracks = stream && typeof stream.getVideoTracks === 'function' ? stream.getVideoTracks() : [];
+        hasLiveVideo = videoTracks.some(track => track.enabled && track.readyState !== 'ended');
+    }
 
     if (!hasLiveAudio) messages.push('MUTED');
     if (!hasLiveVideo) messages.push('CAM OFF');
@@ -383,6 +429,7 @@ function ensurePlayerVideoSeat(player) {
     if (box) {
         box.dataset.name = characterName;
         box.dataset.isDm = isDM ? 'true' : 'false';
+        applyPlayerMediaStateToVideoBox(box, player);
 
         const label = document.getElementById(`label-${peerId}`);
         if (label) label.innerText = characterName;
@@ -401,6 +448,7 @@ function ensurePlayerVideoSeat(player) {
     box.dataset.peerId = peerId;
     box.dataset.name = characterName;
     box.dataset.isDm = isDM ? 'true' : 'false';
+    applyPlayerMediaStateToVideoBox(box, player);
 
     const videoEl = document.createElement('video');
     videoEl.autoplay = true;
@@ -658,10 +706,16 @@ function applyVideoOrder(peerOrder) {
 }
 
 function addVideoFeed(stream, peerId, characterName, isDM = false) {
+    const knownPlayer = Array.isArray(currentActiveRoomArray)
+        ? currentActiveRoomArray.find(p => String(p.peerId) === String(peerId))
+        : null;
+
     const box = ensurePlayerVideoSeat({
         peerId,
-        name: characterName || 'Player',
-        isDM
+        name: characterName || knownPlayer?.name || 'Player',
+        isDM: knownPlayer ? knownPlayer.isDM : isDM,
+        micEnabled: knownPlayer ? knownPlayer.micEnabled : undefined,
+        camEnabled: knownPlayer ? knownPlayer.camEnabled : undefined
     });
 
     if (!box) return;
