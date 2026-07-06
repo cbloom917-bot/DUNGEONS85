@@ -129,16 +129,18 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     display: flex;
     gap: 6px;
     overflow-x: auto;
-    height: 180px;
+    height: clamp(126px, 10.25vw, 180px);
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     z-index: 20;
 }
 
 .video-box {
     position: relative;
-    flex: 0 0 300px;          /* Fixed width */
-    height: 169px;            /* True 16:9 for 300px width */
+    flex: 0 1 clamp(150px, 15.65vw, 260px);
+    aspect-ratio: 16 / 9;
+    height: auto;
+    max-height: calc(100% - 8px);
     background: #111;
     border: 2px solid #000;   /* Future initiative border */
     display: flex;
@@ -303,4 +305,21 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 #vtt-canvas.erasing-sketch {
     cursor: not-allowed !important;
+}
+
+
+@media (max-width: 1100px) {
+    .video-ribbon {
+        justify-content: flex-start;
+    }
+
+    .video-box {
+        flex-basis: 140px;
+    }
+
+    .video-label,
+    .remote-media-status,
+    #local-media-status {
+        font-size: 9px !important;
+    }
 }
