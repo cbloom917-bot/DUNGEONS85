@@ -1,5 +1,7 @@
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { Server } = require('socket.io');
 const pkg = require('./package.json');
 
@@ -24,6 +26,64 @@ const io = new Server(server, {
 app.get('/version', (req, res) => {
     res.json({ version: pkg.version });
 });
+
+const COMMUNITY_STATS_FILE = path.join(__dirname, 'community-stats.json');
+
+function loadCommunityStats() {
+    try {
+        if (!fs.existsSync(COMMUNITY_STATS_FILE)) {
+            return {
+                playersSinceLaunch: 0,
+                tablesSinceLaunch: 0
+            };
+        }
+
+        const parsed = JSON.parse(fs.readFileSync(COMMUNITY_STATS_FILE, 'utf8'));
+        return {
+            playersSinceLaunch: Number(parsed.playersSinceLaunch) || 0,
+            tablesSinceLaunch: Number(parsed.tablesSinceLaunch) || 0
+        };
+    } catch (err) {
+        console.warn('[SYS] Could not load community stats:', err);
+        return {
+            playersSinceLaunch: 0,
+            tablesSinceLaunch: 0
+        };
+    }
+}
+
+const communityStats = loadCommunityStats();
+
+function saveCommunityStats() {
+    try {
+        fs.writeFileSync(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2));
+    } catch (err) {
+        console.warn('[SYS] Could not save community stats:', err);
+    }
+}
+
+function getActiveCommunityStats() {
+    const activeTables = Object.values(roomCampaignStates).filter(state => state && Array.isArray(state.players) && state.players.length > 0).length;
+    const activePlayers = Object.values(roomCampaignStates).reduce((total, state) => {
+        if (!state || !Array.isArray(state.players)) return total;
+        return total + state.players.length;
+    }, 0);
+
+    return { activeTables, activePlayers };
+}
+
+function incrementCommunityStat(key) {
+    communityStats[key] = (Number(communityStats[key]) || 0) + 1;
+    saveCommunityStats();
+}
+
+app.get('/community-stats', (req, res) => {
+    res.json({
+        ...communityStats,
+        ...getActiveCommunityStats()
+    });
+});
+
 
 app.use(express.static(__dirname));
 
@@ -145,6 +205,7 @@ io.on('connection', (socket) => {
                 initiativePeerId: null,
                 videoOrder: []
             };
+            incrementCommunityStat('tablesSinceLaunch');
         }
 
         socket.join(currentRoom);
@@ -160,6 +221,7 @@ io.on('connection', (socket) => {
 
         state.players = state.players.filter(p => p.socketId !== socket.id);
         state.players.push({ socketId: socket.id, peerId: String(peerId), name: playerName, isDM });
+        incrementCommunityStat('playersSinceLaunch');
 
         if (state.wipeTimer) {
             clearTimeout(state.wipeTimer);
