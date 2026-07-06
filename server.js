@@ -269,8 +269,13 @@ io.on('connection', (socket) => {
         const player = state.players.find(p => p.socketId === socket.id);
         if (!player) return;
 
-        player.micEnabled = Boolean(mediaState.micEnabled);
-        player.camEnabled = Boolean(mediaState.camEnabled);
+        const nextMicEnabled = Boolean(mediaState.micEnabled);
+        const nextCamEnabled = Boolean(mediaState.camEnabled);
+
+        if (player.micEnabled === nextMicEnabled && player.camEnabled === nextCamEnabled) return;
+
+        player.micEnabled = nextMicEnabled;
+        player.camEnabled = nextCamEnabled;
 
         io.to(currentRoom).emit('updatePlayerList', state.players);
     });
