@@ -1,6 +1,6 @@
 {
   "name": "bugbear-barbeque",
-  "version": "9.6.8",
+  "version": "9.6.8.1",
   "description": "Minimalist Central Server VTT Engine",
   "main": "server.js",
   "scripts": {
