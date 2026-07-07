@@ -97,6 +97,12 @@ function selectLocalFile(mode) {
         reader.onload = (event) => {
             const dataUrl = event.target.result;
 
+            if (typeof dataUrl !== 'string' || dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+                hideLoading();
+                alert(`${mode === 'MAP' ? 'Map' : 'Token'} image exceeds maximum supported size.`);
+                return;
+            }
+
             if (mode === 'MAP') {
                 tableState.mapSrc = dataUrl;
                 markTableDirty();

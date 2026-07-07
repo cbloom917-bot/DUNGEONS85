@@ -25,6 +25,114 @@ function normalizeD85Filename(value, fallback) {
     return `${safeName}.d85`;
 }
 
+
+function sanitizeImportedImageSource(src) {
+    if (typeof src !== 'string') return null;
+    if (src.length > MAX_IMAGE_DATA_URL_LENGTH) return null;
+    return src;
+}
+
+function sanitizeImportedToken(token) {
+    if (!token || typeof token !== 'object') return null;
+
+    const src = sanitizeImportedImageSource(token.src);
+    if (!src) return null;
+
+    return {
+        id: String(token.id || `token-${Date.now()}-${Math.random()}`),
+        src,
+        x: Number(token.x) || 0,
+        y: Number(token.y) || 0,
+        size: Number(token.size) || DEFAULT_TOKEN_SIZE,
+        hidden: Boolean(token.hidden),
+        rev: Number(token.rev) || 0
+    };
+}
+
+function sanitizeImportedNote(note) {
+    if (!note || typeof note !== 'object') return null;
+
+    return {
+        id: String(note.id || `note-${Date.now()}-${Math.random()}`),
+        x: Number(note.x) || 0,
+        y: Number(note.y) || 0,
+        label: String(note.label || '').substring(0, 40),
+        body: String(note.body || '').substring(0, 1000)
+    };
+}
+
+function sanitizeImportedSketch(sketch) {
+    if (!sketch || typeof sketch !== 'object') return null;
+
+    const type = String(sketch.type || '');
+    if (!['line', 'circle', 'rect'].includes(type)) return null;
+
+    const color = String(sketch.color || '#000000').toLowerCase();
+    const allowedColors = new Set(['#000000', '#0066ff', '#ff3333', '#ffffff']);
+
+    return {
+        id: String(sketch.id || `sketch-${Date.now()}-${Math.random()}`),
+        type,
+        x1: Number(sketch.x1) || 0,
+        y1: Number(sketch.y1) || 0,
+        x2: Number(sketch.x2) || 0,
+        y2: Number(sketch.y2) || 0,
+        color: allowedColors.has(color) ? color : '#000000'
+    };
+}
+
+function sanitizeImportedFoWPolygons(polygons) {
+    if (!Array.isArray(polygons)) return [];
+
+    return polygons
+        .slice(0, MAX_FOW_POLYGONS)
+        .map((polygon) => {
+            if (!Array.isArray(polygon)) return null;
+
+            const points = polygon
+                .slice(0, MAX_FOW_POINTS_PER_POLYGON)
+                .map((point) => {
+                    if (!point || typeof point !== 'object') return null;
+
+                    const x = Number(point.x);
+                    const y = Number(point.y);
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+                    return { x, y };
+                })
+                .filter(Boolean);
+
+            return points.length >= 3 ? points : null;
+        })
+        .filter(Boolean);
+}
+
+function sanitizeImportedTableState(importedState) {
+    const imported = importedState && typeof importedState === 'object' ? importedState : {};
+    const mapSrc = sanitizeImportedImageSource(imported.mapSrc);
+
+    return {
+        ...imported,
+        playerName: tableState.playerName,
+        isDM: tableState.isDM,
+        mapSrc: mapSrc || null,
+        tokens: (Array.isArray(imported.tokens) ? imported.tokens : [])
+            .map(sanitizeImportedToken)
+            .filter(Boolean),
+        notes: (Array.isArray(imported.notes) ? imported.notes : [])
+            .map(sanitizeImportedNote)
+            .filter(Boolean)
+            .slice(0, 500),
+        sketches: (Array.isArray(imported.sketches) ? imported.sketches : [])
+            .map(sanitizeImportedSketch)
+            .filter(Boolean)
+            .slice(0, 500),
+        fowEnabled: Boolean(imported.fowEnabled),
+        fowPolygons: sanitizeImportedFoWPolygons(imported.fowPolygons),
+        isDarknessActive: Boolean(imported.isDarknessActive)
+    };
+}
+
 function exportTableState() {
     const stateString = JSON.stringify(tableState);
     const compressedData = pako.deflate(stateString);
@@ -60,9 +168,7 @@ async function importD85Module(file) {
                 { to: 'string' }
             );
 
-            tableState = JSON.parse(decompressed);
-            if (!Array.isArray(tableState.notes)) tableState.notes = [];
-            if (!Array.isArray(tableState.sketches)) tableState.sketches = [];
+            tableState = sanitizeImportedTableState(JSON.parse(decompressed));
 
             const imagePromises = [];
 

@@ -10,6 +10,9 @@ const SERVER_URL = "https://newvtt.onrender.com";
 const DEFAULT_TOKEN_SIZE = 70;
 const GRID_SIZE = 70;
 const DEFAULT_MAP_ZOOM = 0.5;
+const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
+const MAX_FOW_POLYGONS = 500;
+const MAX_FOW_POINTS_PER_POLYGON = 250;
 
 let tableState = {
     playerName: '',
