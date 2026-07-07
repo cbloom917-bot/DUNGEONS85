@@ -167,6 +167,7 @@ function selectSketchTool(tool) {
         const nextColorIndex = currentColorIndex + 1;
 
         if (nextColorIndex >= SKETCH_COLORS.length) {
+            sketchToolColors[tool] = 0;
             clearSketchTool();
             return;
         }

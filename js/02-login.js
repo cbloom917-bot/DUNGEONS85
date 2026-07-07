@@ -197,10 +197,20 @@ function initializeClient() {
 
     window.addEventListener('keydown', (e) => {
         if (!tableState.isDM) return;
-        if (e.code !== 'Space') return;
 
         const tag = document.activeElement?.tagName?.toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'button') return;
+        if (tag === 'input' || tag === 'textarea') return;
+
+        if (e.code === 'Escape') {
+            if (activeSketchTool || sketchDraft) {
+                e.preventDefault();
+                clearSketchTool();
+            }
+            return;
+        }
+
+        if (e.code !== 'Space') return;
+        if (tag === 'button') return;
 
         e.preventDefault();
         advanceInitiativeSpotlight();
