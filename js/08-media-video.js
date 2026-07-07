@@ -97,7 +97,7 @@ async function setupCameraAndVideo() {
     showLocalMediaStatus("mic", "MIC OFF");
     showLocalMediaStatus("cam", "CAMERA OFF");
 
-    console.log("DEBUG: Joined with media off by default.");
+    debugLog("DEBUG: Joined with media off by default.");
 }
 
 function releaseVideoElement(videoEl, options = {}) {
@@ -109,7 +109,7 @@ function releaseVideoElement(videoEl, options = {}) {
             try {
                 track.stop();
             } catch (err) {
-                console.warn("DEBUG: Failed to stop stale remote media track:", err);
+                debugWarn("DEBUG: Failed to stop stale remote media track:", err);
             }
         });
     }
@@ -126,7 +126,7 @@ function stopLocalMediaStream() {
         try {
             track.stop();
         } catch (err) {
-            console.warn("DEBUG: Failed to stop local media track:", err);
+            debugWarn("DEBUG: Failed to stop local media track:", err);
         }
     });
 
@@ -245,7 +245,7 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
                 call._d85Closed = true;
                 if (call && typeof call.close === 'function') call.close();
             } catch (err) {
-                console.warn("DEBUG: Failed to close stale PeerJS call:", err);
+                debugWarn("DEBUG: Failed to close stale PeerJS call:", err);
             }
         });
         activePeerCalls.delete(key);
@@ -308,11 +308,11 @@ function applyVttVideoSenderSettings(call) {
             }
 
             sender.setParameters(parameters).catch(err => {
-                console.warn("DEBUG: Failed to apply VTT video bitrate cap:", err);
+                debugWarn("DEBUG: Failed to apply VTT video bitrate cap:", err);
             });
         });
     } catch (err) {
-        console.warn("DEBUG: Failed to inspect PeerJS video sender:", err);
+        debugWarn("DEBUG: Failed to inspect PeerJS video sender:", err);
     }
 }
 
@@ -346,13 +346,13 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         });
 
         call.on('error', (err) => {
-            console.warn(`DEBUG: PeerJS call failed during ${reason}:`, err);
+            debugWarn(`DEBUG: PeerJS call failed during ${reason}:`, err);
             closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
         });
 
         return call;
     } catch (err) {
-        console.warn(`DEBUG: Failed to open PeerJS call during ${reason}:`, err);
+        debugWarn(`DEBUG: Failed to open PeerJS call during ${reason}:`, err);
         closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
         return null;
     }

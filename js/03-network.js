@@ -6,7 +6,7 @@
 // ============================================================
 
 function initHybridMediaVttStack(roomName, playerName) {
-    console.log("DEBUG: initHybridMediaVttStack started", roomName, playerName);
+    debugLog("DEBUG: initHybridMediaVttStack started", roomName, playerName);
     hasReceivedInitialTokenSync = false;
     hasReceivedInitialFoWSync = false;
     hasReceivedInitialMapSync = false;
@@ -35,23 +35,23 @@ function initHybridMediaVttStack(roomName, playerName) {
     peer = new Peer(undefined, webrtcIceConfig);
 
     peer.on('disconnected', () => {
-        console.warn("DEBUG: PeerJS disconnected; attempting reconnect");
+        debugWarn("DEBUG: PeerJS disconnected; attempting reconnect");
         peer.reconnect();
     });
 
     peer.on('close', () => {
-        console.warn("DEBUG: PeerJS closed");
+        debugWarn("DEBUG: PeerJS closed");
     });
 
     peer.on('error', (err) => {
-        console.error("DEBUG: PeerJS error:", err);
+        debugError("DEBUG: PeerJS error:", err);
     });
 
     peer.on('open', (peerId) => {
-        console.log("DEBUG: PeerJS open", peerId);
+        debugLog("DEBUG: PeerJS open", peerId);
         localPeerId = peerId;
 
-        console.count("DEBUG: Creating Socket.IO client");
+        debugCount("DEBUG: Creating Socket.IO client");
 
         socket = io(SERVER_URL, {
             transports: ["websocket"]
@@ -60,35 +60,35 @@ function initHybridMediaVttStack(roomName, playerName) {
         // Temporary reconnect diagnostics. These logs tell us whether the
         // browser, network, Socket.IO transport, or server is closing the socket.
         socket.on('disconnect', (reason) => {
-            console.warn("DEBUG: Socket disconnected:", reason);
+            debugWarn("DEBUG: Socket disconnected:", reason);
         });
 
         socket.on('connect_error', (err) => {
-            console.error("DEBUG: Socket connect_error:", err?.message || err, err);
+            debugError("DEBUG: Socket connect_error:", err?.message || err, err);
         });
 
         socket.on('error', (err) => {
-            console.error("DEBUG: Socket error:", err);
+            debugError("DEBUG: Socket error:", err);
         });
 
         socket.io.on('reconnect_attempt', (attempt) => {
-            console.warn("DEBUG: Socket reconnect attempt:", attempt);
+            debugWarn("DEBUG: Socket reconnect attempt:", attempt);
         });
 
         socket.io.on('reconnect', (attempt) => {
-            console.warn("DEBUG: Socket reconnected after attempts:", attempt);
+            debugWarn("DEBUG: Socket reconnected after attempts:", attempt);
         });
 
         socket.io.on('reconnect_error', (err) => {
-            console.error("DEBUG: Socket reconnect_error:", err?.message || err, err);
+            debugError("DEBUG: Socket reconnect_error:", err?.message || err, err);
         });
 
         socket.io.on('reconnect_failed', () => {
-            console.error("DEBUG: Socket reconnect_failed");
+            debugError("DEBUG: Socket reconnect_failed");
         });
 
         socket.on('connect', () => {
-            console.log("DEBUG: Socket connected", socket.id);
+            debugLog("DEBUG: Socket connected", socket.id);
             activeRoomName = roomName;
 
             const localVideoBox = document.getElementById('local-video-container');
@@ -136,7 +136,7 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('updatePlayerList', (playersArray) => {
-            console.log("DEBUG: updatePlayerList", playersArray);
+            debugLog("DEBUG: updatePlayerList", playersArray);
 
             const previousPlayers = currentActiveRoomArray || [];
 
@@ -169,7 +169,7 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         peer.on('call', (call) => {
-            console.log("DEBUG: Incoming PeerJS call from", call.peer);
+            debugLog("DEBUG: Incoming PeerJS call from", call.peer);
 
             const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
             ensurePlayerVideoSeat({
@@ -179,11 +179,11 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             if (!localStream) {
-                console.warn("DEBUG: No local stream available to answer call");
+                debugWarn("DEBUG: No local stream available to answer call");
                 try {
                     if (call && typeof call.close === 'function') call.close();
                 } catch (err) {
-                    console.warn("DEBUG: Failed to close unanswered PeerJS call:", err);
+                    debugWarn("DEBUG: Failed to close unanswered PeerJS call:", err);
                 }
                 return;
             }
@@ -210,7 +210,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             call.on('error', (err) => {
-                console.warn("DEBUG: Incoming PeerJS call error:", err);
+                debugWarn("DEBUG: Incoming PeerJS call error:", err);
                 closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
             });
         });
@@ -223,7 +223,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             // roll the table back to a previous map after a brief websocket reconnect.
             // Re-publish the GM's current local map instead.
             if (tableState.isDM && hasReceivedInitialMapSync && tableState.mapSrc) {
-                console.warn("DEBUG: Ignoring syncMap after GM reconnect to protect local map state.");
+                debugWarn("DEBUG: Ignoring syncMap after GM reconnect to protect local map state.");
                 socket.emit('updateMapImage', tableState.mapSrc);
                 return;
             }
@@ -258,7 +258,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             // a stale server snapshot replace newer local token work after reconnect.
             // Instead, immediately re-publish the GM's local token matrix to the server.
             if (tableState.isDM && hasReceivedInitialTokenSync && tableState.tokens.length > 0) {
-                console.warn("DEBUG: Ignoring syncTokens after GM reconnect to protect local token state.");
+                debugWarn("DEBUG: Ignoring syncTokens after GM reconnect to protect local token state.");
                 broadcastTokensMatrixChange();
                 return;
             }
@@ -373,7 +373,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             // a stale server snapshot erase it after a brief websocket reconnect.
             // Re-publish the GM's local FoW state instead.
             if (tableState.isDM && hasReceivedInitialFoWSync && hasLocalFoWWork) {
-                console.warn("DEBUG: Ignoring syncFoW after GM reconnect to protect local fog state.");
+                debugWarn("DEBUG: Ignoring syncFoW after GM reconnect to protect local fog state.");
                 broadcastFoW();
                 return;
             }
@@ -399,7 +399,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             // Do not re-broadcast here; server echoes and reconnect syncs can otherwise
             // produce an updateNotes/syncNotes loop.
             if (tableState.isDM && hasReceivedInitialNotesSync && hasLocalNotes) {
-                console.warn("DEBUG: Ignoring syncNotes after GM reconnect to protect local notes state.");
+                debugWarn("DEBUG: Ignoring syncNotes after GM reconnect to protect local notes state.");
                 return;
             }
 
@@ -414,7 +414,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             const hasLocalSketches = Array.isArray(tableState.sketches) && tableState.sketches.length > 0;
 
             if (tableState.isDM && hasReceivedInitialSketchSync && hasLocalSketches) {
-                console.warn("DEBUG: Ignoring syncSketches after GM reconnect to protect local sketches state.");
+                debugWarn("DEBUG: Ignoring syncSketches after GM reconnect to protect local sketches state.");
                 return;
             }
 
@@ -424,7 +424,7 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncInitiativeSpotlight', (peerId) => {
-            console.log("DEBUG: syncInitiativeSpotlight received", peerId);
+            debugLog("DEBUG: syncInitiativeSpotlight received", peerId);
             setInitiativeSpotlight(peerId);
         });
 

@@ -283,14 +283,14 @@ async function toggleLocalAudio() {
 
                 clearLocalMediaStatus("mic");
                 publishLocalMediaState();
-                console.log("DEBUG: Microphone permission granted on demand.");
+                debugLog("DEBUG: Microphone permission granted on demand.");
                 // First microphone permission should not refresh PeerJS calls.
                 // The joining client may already be receiving video-only streams;
                 // rebuilding calls here briefly blanks those incoming feeds until
                 // a later camera refresh. Keep microphone permission track-only.
             }
         } catch (err) {
-            console.warn("DEBUG: Microphone access denied on demand:", err);
+            debugWarn("DEBUG: Microphone access denied on demand:", err);
             showLocalMediaStatus("mic", "MIC BLOCKED — ENABLE IT IN BROWSER SETTINGS");
             if (btn) {
                 btn.innerText = "Unmute";
@@ -346,11 +346,11 @@ async function toggleLocalVideo() {
 
                 clearLocalMediaStatus("cam");
                 publishLocalMediaState();
-                console.log("DEBUG: Camera permission granted on demand.");
+                debugLog("DEBUG: Camera permission granted on demand.");
                 refreshPeerMediaConnections("camera-permission");
             }
         } catch (err) {
-            console.warn("DEBUG: Camera access denied on demand:", err);
+            debugWarn("DEBUG: Camera access denied on demand:", err);
             showLocalMediaStatus("cam", "CAMERA BLOCKED — ENABLE IT IN BROWSER SETTINGS");
             if (btn) {
                 btn.innerText = "Cam On";

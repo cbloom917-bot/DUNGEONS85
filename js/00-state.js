@@ -13,6 +13,23 @@ const DEFAULT_MAP_ZOOM = 0.5;
 const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
+const D85_DEBUG_LOGS = false;
+
+function debugLog(...args) {
+    if (D85_DEBUG_LOGS) console.log(...args);
+}
+
+function debugWarn(...args) {
+    if (D85_DEBUG_LOGS) console.warn(...args);
+}
+
+function debugError(...args) {
+    if (D85_DEBUG_LOGS) console.error(...args);
+}
+
+function debugCount(...args) {
+    if (D85_DEBUG_LOGS) console.count(...args);
+}
 
 let tableState = {
     playerName: '',
@@ -117,6 +134,28 @@ const ctxMenu = document.getElementById('ctx-menu');
 const fogCanvas = document.createElement('canvas');
 const fogCtx = fogCanvas.getContext('2d');
 
-const adjectives = ["Bitter", "Black", "Bleak", "Broken", "Cold", "Crimson", "Crooked", "Cursed", "Dark", "Death", "Deep", "Fallen", "Forgotten", "Frozen", "Golden", "Hollow", "Iron", "Lost", "Shattered", "Silent", "Storm", "Sunken", "Thorn"];
-const nouns = ["Abyss", "Barrow", "Bastion", "Bloom", "Bog", "Cairn", "Cavern", "Crawl", "Crypt", "Fen", "Forest", "Fortress", "Keep", "Marsh", "Mire", "Moor", "Pit", "Shrine", "Spawn", "Temple", "Tower", "Vale", "Vault", "Void", "Warren"];
+const adjectives = [
+    "Bitter", "Black", "Bleak", "Broken", "Cold",
+    "Crimson", "Crooked", "Cursed", "Dark", "Death",
+    "Deep", "Fallen", "Forgotten", "Frozen", "Golden",
+    "Hollow", "Iron", "Lost", "Shattered", "Silent",
+    "Storm", "Sunken", "Thorn", "Ancient", "Ashen",
+    "Bloodied", "Charnel", "Doomed", "Drowned", "Ebon",
+    "Gilded", "Grave", "Grim", "Haunted", "Moonless",
+    "Ravenous", "Ruined", "Rusted", "Sable", "Shadowed",
+    "Sinister", "Stygian", "Tainted", "Umbral", "Unhallowed",
+    "Vermin", "Withered", "Wretched", "Ghastly", "Nameless"
+];
+const nouns = [
+    "Abyss", "Barrow", "Bastion", "Bloom", "Bog",
+    "Cairn", "Cavern", "Crawl", "Crypt", "Fen",
+    "Forest", "Fortress", "Keep", "Marsh", "Mire",
+    "Moor", "Pit", "Shrine", "Spawn", "Temple",
+    "Tower", "Vale", "Vault", "Void", "Warren",
+    "Catacomb", "Chasm", "Citadel", "Coffin", "Crypts",
+    "Dolmen", "Dungeon", "Gaol", "Grave", "Grove",
+    "Gulch", "Halls", "Labyrinth", "Monolith", "Necropolis",
+    "Obelisk", "Ossuary", "Palisade", "Ruin", "Sanctum",
+    "Sepulcher", "Spire", "Tomb", "Undercrypt", "Ziggurat"
+];
 
