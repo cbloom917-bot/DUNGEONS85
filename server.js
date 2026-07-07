@@ -12,6 +12,13 @@ const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const MAX_SOCKET_PAYLOAD_BYTES = 16 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
+const COMMUNITY_STATS_SAVE_DEBOUNCE_MS = 2000;
+const RATE_LIMITS = Object.freeze({
+    tokenMove: { windowMs: 1000, max: 30 },
+    executeDiceRoll: { windowMs: 1000, max: 8 },
+    updateMapImage: { windowMs: 10000, max: 3 },
+    updateFoW: { windowMs: 1000, max: 12 }
+});
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',')
@@ -58,12 +65,21 @@ function loadCommunityStats() {
 }
 
 const communityStats = loadCommunityStats();
+let communityStatsSaveTimer = null;
+
+function flushCommunityStats() {
+    communityStatsSaveTimer = null;
+    fs.writeFile(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2), (err) => {
+        if (err) console.warn('[SYS] Could not save community stats:', err);
+    });
+}
 
 function saveCommunityStats() {
-    try {
-        fs.writeFileSync(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2));
-    } catch (err) {
-        console.warn('[SYS] Could not save community stats:', err);
+    if (communityStatsSaveTimer) return;
+
+    communityStatsSaveTimer = setTimeout(flushCommunityStats, COMMUNITY_STATS_SAVE_DEBOUNCE_MS);
+    if (typeof communityStatsSaveTimer.unref === 'function') {
+        communityStatsSaveTimer.unref();
     }
 }
 
@@ -80,6 +96,23 @@ function getActiveCommunityStats() {
 function incrementCommunityStat(key) {
     communityStats[key] = (Number(communityStats[key]) || 0) + 1;
     saveCommunityStats();
+}
+
+function allowSocketEvent(socket, eventName) {
+    const limit = RATE_LIMITS[eventName];
+    if (!limit) return true;
+
+    const now = Date.now();
+    socket.data.rateLimits = socket.data.rateLimits || Object.create(null);
+
+    const current = socket.data.rateLimits[eventName];
+    if (!current || now - current.windowStart >= limit.windowMs) {
+        socket.data.rateLimits[eventName] = { windowStart: now, count: 1 };
+        return true;
+    }
+
+    current.count += 1;
+    return current.count <= limit.max;
 }
 
 app.get('/community-stats', (req, res) => {
@@ -350,6 +383,7 @@ io.on('connection', (socket) => {
     socket.on('tokenMove', (data) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (!data || typeof data !== 'object') return;
+        if (!allowSocketEvent(socket, 'tokenMove')) return;
 
         const state = roomCampaignStates[currentRoom];
         const player = state.players.find(p => p.socketId === socket.id);
@@ -462,6 +496,7 @@ io.on('connection', (socket) => {
         const state = roomCampaignStates[currentRoom];
         const player = state.players.find(p => p.socketId === socket.id);
         if (!player || !player.isDM) return;
+        if (!allowSocketEvent(socket, 'updateMapImage')) return;
         if (!isImageSourceWithinLimit(mapSrcString)) return;
         
         state.mapSrc = mapSrcString;
@@ -507,6 +542,7 @@ io.on('connection', (socket) => {
 
     socket.on('executeDiceRoll', (rollData) => {
         if (!currentRoom || !rollData || typeof rollData !== 'object') return;
+        if (!allowSocketEvent(socket, 'executeDiceRoll')) return;
         io.to(currentRoom).emit('diceRolledAnimation', rollData);
     });
 
@@ -525,6 +561,7 @@ io.on('connection', (socket) => {
     socket.on('updateFoW', (fowData) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (!fowData || typeof fowData !== 'object') return;
+        if (!allowSocketEvent(socket, 'updateFoW')) return;
 
         const state = roomCampaignStates[currentRoom];
         const player = state.players.find(p => p.socketId === socket.id);
