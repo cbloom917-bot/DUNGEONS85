@@ -8,6 +8,11 @@ const pkg = require('./package.json');
 const app = express();
 const server = http.createServer(app);
 
+const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
+const MAX_SOCKET_PAYLOAD_BYTES = 16 * 1024 * 1024;
+const MAX_FOW_POLYGONS = 500;
+const MAX_FOW_POINTS_PER_POLYGON = 250;
+
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',')
     : ["https://dungeons85.com", "https://www.dungeons85.com"];
@@ -17,7 +22,7 @@ const io = new Server(server, {
         origin: allowedOrigins,
         methods: ["GET", "POST"]
     },
-    maxHttpBufferSize: 1e8,
+    maxHttpBufferSize: MAX_SOCKET_PAYLOAD_BYTES,
     transports: ['websocket'],
     pingInterval: 25000,
     pingTimeout: 60000 
@@ -149,12 +154,51 @@ function emitNotesToRoom(roomName, sourceSocketId = null) {
 }
 
 
+function sanitizeImageSource(src) {
+    const value = String(src || '');
+    if (value.length > MAX_IMAGE_DATA_URL_LENGTH) return null;
+    return value;
+}
+
+function isImageSourceWithinLimit(src) {
+    return typeof src === 'string' && src.length <= MAX_IMAGE_DATA_URL_LENGTH;
+}
+
+function sanitizeFoWPolygons(polygons) {
+    if (!Array.isArray(polygons)) return [];
+
+    return polygons
+        .slice(0, MAX_FOW_POLYGONS)
+        .map((polygon) => {
+            if (!Array.isArray(polygon)) return null;
+
+            const points = polygon
+                .slice(0, MAX_FOW_POINTS_PER_POLYGON)
+                .map((point) => {
+                    if (!point || typeof point !== 'object') return null;
+
+                    const x = Number(point.x);
+                    const y = Number(point.y);
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+                    return { x, y };
+                })
+                .filter(Boolean);
+
+            return points.length >= 3 ? points : null;
+        })
+        .filter(Boolean);
+}
+
 function sanitizeToken(token) {
     if (!token || typeof token !== 'object') return null;
 
+    const src = sanitizeImageSource(token.src);
+    if (src === null) return null;
+
     return {
         id: String(token.id || `token-${Date.now()}-${Math.random()}`),
-        src: String(token.src || ''),
+        src,
         x: Number(token.x) || 0,
         y: Number(token.y) || 0,
         size: Number(token.size) || 70,
@@ -414,8 +458,13 @@ io.on('connection', (socket) => {
     socket.on('updateMapImage', (mapSrcString) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (typeof mapSrcString !== 'string') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+        if (!isImageSourceWithinLimit(mapSrcString)) return;
         
-        roomCampaignStates[currentRoom].mapSrc = mapSrcString;
+        state.mapSrc = mapSrcString;
         socket.to(currentRoom).emit('syncMap', mapSrcString);
     });
 
@@ -462,7 +511,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('forceCamera', (cameraData) => {
-        if (!currentRoom || !cameraData || typeof cameraData !== 'object') return;
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!cameraData || typeof cameraData !== 'object') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
         socket.to(currentRoom).emit('syncCamera', cameraData);
     });
 
@@ -471,20 +526,24 @@ io.on('connection', (socket) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (!fowData || typeof fowData !== 'object') return;
 
-        roomCampaignStates[currentRoom].fowEnabled = Boolean(fowData.enabled);
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
+        state.fowEnabled = Boolean(fowData.enabled);
         
         if (Array.isArray(fowData.polygons)) {
-            roomCampaignStates[currentRoom].fowPolygons = fowData.polygons;
+            state.fowPolygons = sanitizeFoWPolygons(fowData.polygons);
         }
         
         if (fowData.darkness !== undefined) {
-            roomCampaignStates[currentRoom].isDarknessActive = Boolean(fowData.darkness);
+            state.isDarknessActive = Boolean(fowData.darkness);
         }
 
         socket.broadcast.to(currentRoom).emit('syncFoW', {
-            enabled: roomCampaignStates[currentRoom].fowEnabled,
-            polygons: roomCampaignStates[currentRoom].fowPolygons,
-            darkness: roomCampaignStates[currentRoom].isDarknessActive
+            enabled: state.fowEnabled,
+            polygons: state.fowPolygons,
+            darkness: state.isDarknessActive
         });
     });
 
@@ -493,6 +552,9 @@ io.on('connection', (socket) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
 
         const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
         state.initiativePeerId = peerId ? String(peerId) : null;
 
         io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
@@ -504,6 +566,9 @@ io.on('connection', (socket) => {
         if (!Array.isArray(peerOrder)) return;
 
         const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
         const activePeerIds = new Set(state.players.map(p => String(p.peerId)));
 
         // Store the full seating order, including the DM.
