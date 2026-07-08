@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 09-persistence.js
+// Dungeons '85 Public Beta 9.7.3.4.1 — 09-persistence.js
 // Ordered client module. Preserve script load order in index.html.
 
 function sanitizeFilenamePart(value) {
@@ -188,6 +188,7 @@ async function importD85Module(file) {
             await new Promise(resolve => requestAnimationFrame(resolve));
 
             if (tableState.mapSrc) centerMapInView();
+            if (tableState.isDM) updateFogUI();
 
             broadcastFullTableState();
 

@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 04-table-sync.js
+// Dungeons '85 Public Beta 9.7.3.4.1 — 04-table-sync.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -22,12 +22,15 @@ function broadcastFoW() {
 function broadcastFullTableState() {
         if (!tableState.isDM || !socket) return;
 
+        // Send fog state before the map so players never draw a freshly imported
+        // dungeon map uncovered for a frame while Fog of War catches up.
+        broadcastFoW();
+
         if (tableState.mapSrc) {
-        socket.emit('updateMapImage', tableState.mapSrc);
+            socket.emit('updateMapImage', tableState.mapSrc);
         }
 
         broadcastTokensMatrixChange();
-        broadcastFoW();
         broadcastNotes();
         broadcastSketches();
     }
