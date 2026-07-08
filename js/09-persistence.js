@@ -1,5 +1,5 @@
-// Dungeons '85 Public Beta 9.6 — 09-persistence.js
-// Refactor-only split from js/main.js. Preserve load order in index.html.
+// Dungeons '85 Public Beta 9.7.3.4 — 09-persistence.js
+// Ordered client module. Preserve script load order in index.html.
 
 function sanitizeFilenamePart(value) {
     return String(value || 'DUNGEONS85')

@@ -1,5 +1,5 @@
-// Dungeons '85 Public Beta 9.6 — 03-network.js
-// Refactor-only split from js/main.js. Preserve load order in index.html.
+// Dungeons '85 Public Beta 9.7.3.4 — 03-network.js
+// Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Networking: Socket.IO + PeerJS
@@ -57,8 +57,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             transports: ["websocket"]
         });
 
-        // Temporary reconnect diagnostics. These logs tell us whether the
-        // browser, network, Socket.IO transport, or server is closing the socket.
+        // Debug-only reconnect diagnostics. These stay gated by D85_DEBUG_LOGS.
         socket.on('disconnect', (reason) => {
             debugWarn("DEBUG: Socket disconnected:", reason);
         });

@@ -1,5 +1,5 @@
-// Dungeons '85 Public Beta 9.6 — 05-canvas-input.js
-// Refactor-only split from js/main.js. Preserve load order in index.html.
+// Dungeons '85 Public Beta 9.7.3.4 — 05-canvas-input.js
+// Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Canvas interaction: camera, tokens, context menu

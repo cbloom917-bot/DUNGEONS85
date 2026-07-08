@@ -1,5 +1,5 @@
-// Dungeons '85 Public Beta 9.6 — 02-login.js
-// Refactor-only split from js/main.js. Preserve load order in index.html.
+// Dungeons '85 Public Beta 9.7.3.4 — 02-login.js
+// Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Login and room selection

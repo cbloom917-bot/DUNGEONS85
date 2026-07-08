@@ -1,8 +1,8 @@
-// Dungeons '85 Public Beta 9.6 — 08-media-video.js
-// Refactor-only split from js/main.js. Preserve load order in index.html.
+// Dungeons '85 Public Beta 9.7.3.4 — 08-media-video.js
+// Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
-// Media and persistence
+// Media, video ribbon, and initiative order
 // ============================================================
 
 function getLocalVideoContainer() {

@@ -1,5 +1,5 @@
-// Dungeons '85 Public Beta 9.6 — 04-table-sync.js
-// Refactor-only split from js/main.js. Preserve load order in index.html.
+// Dungeons '85 Public Beta 9.7.3.4 — 04-table-sync.js
+// Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Fog of War, darkness, and table-state broadcasting
