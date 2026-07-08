@@ -261,7 +261,7 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
 
     const videoEl = box.querySelector('video');
 
-    // When a user grants camera permission for the first time, we need to
+    // When a user grants mic/camera permission for the first time, we need to
     // rebuild outgoing media calls so other players can receive the new track.
     // Preserve the existing incoming video element locally until the replacement
     // stream arrives; otherwise the joining player's already-visible feeds blink
@@ -322,11 +322,11 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
 
     try {
         // One live PeerJS media call per remote peer keeps long sessions from
-        // accumulating stale RTCPeerConnections. Camera changes deliberately
-        // rebuild the call; microphone mute/unmute does not call this path.
+        // accumulating stale RTCPeerConnections. First-time media permissions
+        // rebuild the call; normal mute/unmute toggles existing tracks in place.
         closePeerConnectionsForPeer(player.peerId, {
             removeVideoBox: false,
-            preserveVideoDuringRefresh: reason === "camera-permission"
+            preserveVideoDuringRefresh: reason === "camera-permission" || reason === "microphone-permission"
         });
         ensurePlayerVideoSeat(player);
 
