@@ -312,13 +312,15 @@ io.on('connection', (socket) => {
             state.wipeTimer = null;
         }
 
-        if (state.mapSrc) socket.emit('syncMap', state.mapSrc);
-        socket.emit('syncTokens', state.tokens); 
+        // Send fog before map/tokens so joining players never render a covered
+        // dungeon uncovered for a frame while the Fog of War state catches up.
         socket.emit('syncFoW', { 
             enabled: state.fowEnabled, 
             polygons: state.fowPolygons, 
             darkness: state.isDarknessActive 
         });
+        if (state.mapSrc) socket.emit('syncMap', state.mapSrc);
+        socket.emit('syncTokens', state.tokens); 
         socket.emit('syncNotes', isDM ? state.notes : getPublicNotes(state.notes));
         socket.emit('syncSketches', state.sketches || []);
 
@@ -500,6 +502,15 @@ io.on('connection', (socket) => {
         if (!isImageSourceWithinLimit(mapSrcString)) return;
         
         state.mapSrc = mapSrcString;
+
+        if (state.fowEnabled || state.isDarknessActive || (Array.isArray(state.fowPolygons) && state.fowPolygons.length > 0)) {
+            socket.to(currentRoom).emit('syncFoW', {
+                enabled: state.fowEnabled,
+                polygons: state.fowPolygons,
+                darkness: state.isDarknessActive
+            });
+        }
+
         socket.to(currentRoom).emit('syncMap', mapSrcString);
     });
 
