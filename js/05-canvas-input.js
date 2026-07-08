@@ -384,7 +384,18 @@ function findSketchAt(worldX, worldY) {
 
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
-        if (e.deltaY < 0) tableState.camera.zoom *= 1.1; else tableState.camera.zoom /= 1.1;
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const oldZoom = Number(tableState.camera.zoom) || 1;
+        const worldX = (mouseX - tableState.camera.x) / oldZoom;
+        const worldY = (mouseY - tableState.camera.y) / oldZoom;
+        const newZoom = e.deltaY < 0 ? oldZoom * 1.1 : oldZoom / 1.1;
+
+        tableState.camera.zoom = newZoom;
+        tableState.camera.x = mouseX - worldX * newZoom;
+        tableState.camera.y = mouseY - worldY * newZoom;
         draw();
     });
 
