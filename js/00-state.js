@@ -1,11 +1,13 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 00-state.js
+// Dungeons '85 Public Beta 9.7.3.4.2 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Dungeons '85 — Shared client runtime state and constants
 // ============================================================
 
-const SERVER_URL = "https://newvtt.onrender.com";
+const SERVER_URL = (window.location.origin && window.location.origin !== 'null')
+    ? window.location.origin
+    : 'https://dungeons85.com';
 const DEFAULT_TOKEN_SIZE = 70;
 const GRID_SIZE = 70;
 const DEFAULT_MAP_ZOOM = 0.5;
