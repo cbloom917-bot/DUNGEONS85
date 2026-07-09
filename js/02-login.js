@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 02-login.js
+// Dungeons '85 Public Beta 9.7.3.4.3 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -302,27 +302,30 @@ async function toggleLocalVideo() {
             localStream = new MediaStream();
         }
 
-        const existingTrack = localStream.getVideoTracks()[0];
+        const existingTracks = localStream.getVideoTracks();
         const btn = document.getElementById('toggle-cam-btn');
 
-        if (existingTrack) {
-            existingTrack.enabled = !existingTrack.enabled;
+        if (existingTracks.length) {
+            existingTracks.forEach(track => {
+                track.stop();
+                localStream.removeTrack(track);
+            });
+
+            const localVideo = document.getElementById('local-video');
+            if (localVideo) localVideo.srcObject = localStream;
+
             if (btn) {
-                btn.innerText = existingTrack.enabled ? "Cam Off" : "Cam On";
-                btn.classList.toggle('muted-state', !existingTrack.enabled);
+                btn.innerText = "Cam On";
+                btn.classList.add('muted-state');
             }
 
-            if (existingTrack.enabled) {
-                clearLocalMediaStatus("cam");
-            } else {
-                showLocalMediaStatus("cam", "CAMERA OFF");
-            }
-
+            showLocalMediaStatus("cam", "CAMERA OFF");
             publishLocalMediaState();
 
-            // Existing camera tracks can be enabled/disabled in place. Do not
-            // rebuild PeerJS calls here; renegotiating on every camera toggle
-            // causes remote feeds to blink or briefly disappear.
+            // Turning camera off must release the hardware track so laptop
+            // camera lights turn off. Rebuild the media call once so peers
+            // receive the remaining mic-only stream instead of a dead video track.
+            refreshPeerMediaConnections("camera-release");
             return;
         }
 

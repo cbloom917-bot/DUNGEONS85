@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.3 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -326,7 +326,7 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         // rebuild the call; normal mute/unmute toggles existing tracks in place.
         closePeerConnectionsForPeer(player.peerId, {
             removeVideoBox: false,
-            preserveVideoDuringRefresh: reason === "camera-permission" || reason === "microphone-permission"
+            preserveVideoDuringRefresh: reason === "camera-permission" || reason === "microphone-permission" || reason === "camera-release"
         });
         ensurePlayerVideoSeat(player);
 
