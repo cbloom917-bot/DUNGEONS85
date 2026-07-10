@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.4 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.6 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -98,7 +98,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 setupVideoBoxInitiative(localVideoBox);
             }
 
-            document.getElementById('room-display').innerText = `Room: ${roomName}`;
+            document.getElementById('room-display').innerText = roomName;
             document.getElementById('top-nav').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('vtt-interface').classList.remove('hidden');
