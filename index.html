@@ -32,7 +32,7 @@
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title" id="version-display">VERSION 9.7.3.4.5 PUBLIC BETA</div>
+            <div class="login-title" id="version-display">VERSION 9.7.3.4.6 PUBLIC BETA</div>
             <div class="toggle-container">
     			<button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false);">PLAYER (JOIN)</button>
     			<button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true);">DM (HOST)</button>
@@ -102,12 +102,12 @@
             <button onclick="toggleTorchPanel()" class="tool-btn">Timer</button>
         </div>
         <div class="tool-row">
-            <button onclick="forcePlayerFocus()" class="tool-btn">Focus</button>
-            <button type="button" class="tool-btn toolbar-empty-slot" tabindex="-1" aria-hidden="true"></button>
-        </div>
-        <div class="tool-row">
             <button onclick="toggleFogPanel()" class="tool-btn">Fog</button>
             <button onclick="toggleNotesVisibility()" id="btn-notes-toggle" class="tool-btn">Notes</button>
+        </div>
+        <div class="tool-row">
+            <button onclick="forcePlayerFocus()" class="tool-btn">Focus</button>
+            <button type="button" class="tool-btn toolbar-empty-slot" tabindex="-1" aria-hidden="true"></button>
         </div>
         <div class="sketch-tool-row" aria-label="Sketch tools">
             <button type="button" onclick="selectSketchTool('line')" id="btn-sketch-line" class="tool-btn sketch-tool-btn" title="Line">/</button>
@@ -116,14 +116,14 @@
             <button type="button" onclick="selectSketchTool('eraser')" id="btn-sketch-eraser" class="tool-btn sketch-tool-btn" title="Erase Sketch">⌫</button>
         </div>
         <div class="tool-divider"></div>
-        <div class="tool-row">
+        <div class="tool-row import-export-row">
             <label class="tool-btn" style="cursor: pointer;">
                 Import
                 <input type="file" accept=".d85" style="display: none;" onchange="importD85Module(this.files[0])">
             </label>
             <button onclick="exportTableState()" class="tool-btn">Export</button>
         </div>
-        <div style="font-size: 9px; text-align: center; text-transform: uppercase; color: #fff; background: #222; padding: 4px;" id="room-display">Room: ---</div>
+        <div id="room-display">---</div>
     </div>
 
 
