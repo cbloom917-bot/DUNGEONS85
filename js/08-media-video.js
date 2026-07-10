@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.3 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.7 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -282,6 +282,40 @@ function closeAllPeerConnections() {
         closePeerConnectionsForPeer(peerId, { removeVideoBox: false });
     });
     activePeerCalls.clear();
+}
+
+async function replaceVideoTrackOnActivePeerCalls(videoTrack) {
+    const replacements = [];
+    let matchedSenders = 0;
+
+    activePeerCalls.forEach(calls => {
+        Array.from(calls || []).forEach(call => {
+            if (!call || call._d85Closed || !call.peerConnection) return;
+
+            const senders = typeof call.peerConnection.getSenders === 'function'
+                ? call.peerConnection.getSenders()
+                : [];
+
+            senders.forEach(sender => {
+                if (!sender || typeof sender.replaceTrack !== 'function') return;
+
+                const isVideoSender = sender._d85VideoSender === true ||
+                    (sender.track && sender.track.kind === 'video');
+                if (!isVideoSender) return;
+
+                sender._d85VideoSender = true;
+                matchedSenders += 1;
+                replacements.push(
+                    sender.replaceTrack(videoTrack || null).catch(err => {
+                        debugWarn("DEBUG: Failed to replace outgoing camera track:", err);
+                    })
+                );
+            });
+        });
+    });
+
+    await Promise.all(replacements);
+    return matchedSenders;
 }
 
 function applyVttVideoSenderSettings(call) {

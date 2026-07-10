@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.5 — 02-login.js
+// Dungeons '85 Public Beta 9.7.3.4.7 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -306,6 +306,8 @@ async function toggleLocalVideo() {
         const btn = document.getElementById('toggle-cam-btn');
 
         if (existingTracks.length) {
+            await replaceVideoTrackOnActivePeerCalls(null);
+
             existingTracks.forEach(track => {
                 track.stop();
                 localStream.removeTrack(track);
@@ -347,7 +349,11 @@ async function toggleLocalVideo() {
                 clearLocalMediaStatus("cam");
                 publishLocalMediaState();
                 debugLog("DEBUG: Camera permission granted on demand.");
-                refreshPeerMediaConnections("camera-permission");
+
+                const replacedVideoSenders = await replaceVideoTrackOnActivePeerCalls(videoTrack);
+                if (!replacedVideoSenders) {
+                    refreshPeerMediaConnections("camera-permission");
+                }
             }
         } catch (err) {
             debugWarn("DEBUG: Camera access denied on demand:", err);
