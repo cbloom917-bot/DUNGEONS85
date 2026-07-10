@@ -88,6 +88,8 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     .tool-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
     .tool-row .tool-btn { margin-bottom: 0; }
     .toolbar-empty-slot { visibility: hidden; pointer-events: none; }
+    .import-export-row { margin-bottom: 0.2rem; }
+    #room-display { font-size: 10px; text-align: center; text-transform: uppercase; color: #fff; background: #222; padding: 4px; letter-spacing: 0.03em; }
     .tool-divider { border-top: 1px dashed #444; margin: 4px 0; }
     .grid-dice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
 
@@ -300,6 +302,11 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     line-height: 1;
     margin-bottom: 4px;
     padding: 0.2rem 0;
+}
+
+
+#btn-sketch-circle {
+    font-size: 22px;
 }
 
 .sketch-tool-btn.active {
