@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.2 — 00-state.js
+// Dungeons '85 Public Beta 9.7.3.4.4 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -62,6 +62,7 @@ let currentFoWPolygon = [];
 let currentMouseWorldX = 0;
 let currentMouseWorldY = 0;
 let contextSelectedToken = null;
+let contextMenuWorldPoint = null;
 let gmRoomMode = "create";
 let hasReceivedInitialTokenSync = false;
 let hasReceivedInitialFoWSync = false;

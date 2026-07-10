@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 01-assets.js
+// Dungeons '85 Public Beta 9.7.3.4.4 — 01-assets.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -80,7 +80,7 @@ async function loadCloudImage(src) {
     });
 }
 
-function selectLocalFile(mode) {
+function selectLocalFile(mode, spawnPoint = null) {
     if (!tableState.isDM) return;
 
     const input = document.createElement('input');
@@ -108,11 +108,17 @@ function selectLocalFile(mode) {
                 markTableDirty();
                 if (socket) socket.emit('updateMapImage', dataUrl);
             } else {
+                const tokenX = spawnPoint && Number.isFinite(Number(spawnPoint.x))
+                    ? Number(spawnPoint.x)
+                    : (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom;
+                const tokenY = spawnPoint && Number.isFinite(Number(spawnPoint.y))
+                    ? Number(spawnPoint.y)
+                    : (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom;
                 tableState.tokens.push({
                     id: `token-${Date.now()}`,
                     src: dataUrl,
-                    x: (canvas.width / 2 - tableState.camera.x) / tableState.camera.zoom,
-                    y: (canvas.height / 2 - tableState.camera.y) / tableState.camera.zoom,
+                    x: tokenX,
+                    y: tokenY,
                     size: DEFAULT_TOKEN_SIZE,
                     hidden: true
                 });

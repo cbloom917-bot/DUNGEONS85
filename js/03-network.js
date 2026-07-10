@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.4 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -216,6 +216,13 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         socket.on('syncMap', (mapSrc) => {
             if (typeof mapSrc !== 'string') return;
+
+            if (!mapSrc) {
+                hasReceivedInitialMapSync = true;
+                tableState.mapSrc = null;
+                draw();
+                return;
+            }
 
             // Reconnect safety: if the GM has already received initial map state
             // and still has a local map loaded, do not let a stale server snapshot

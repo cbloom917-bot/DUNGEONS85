@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.1 — 04-table-sync.js
+// Dungeons '85 Public Beta 9.7.3.4.4 — 04-table-sync.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -275,7 +275,7 @@ function updateNotesToggleUI() {
     const btn = document.getElementById('btn-notes-toggle');
     if (!btn) return;
 
-    btn.innerText = notesVisible ? 'HIDE NOTES' : 'SHOW NOTES';
+    btn.innerText = 'NOTES';
 
     if (notesVisible) {
         btn.style.background = '#fff';

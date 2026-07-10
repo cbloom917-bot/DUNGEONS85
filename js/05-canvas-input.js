@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 05-canvas-input.js
+// Dungeons '85 Public Beta 9.7.3.4.4 — 05-canvas-input.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -180,6 +180,23 @@ function findSketchAt(worldX, worldY) {
     }
 
 
+function showContextMenuAt(clientX, clientY, mode) {
+        const tokenActions = document.getElementById('ctx-token-actions');
+        const tableActions = document.getElementById('ctx-table-actions');
+
+        if (tokenActions) tokenActions.style.display = mode === 'token' ? 'block' : 'none';
+        if (tableActions) tableActions.style.display = mode === 'table' ? 'block' : 'none';
+
+        ctxMenu.style.left = `${clientX}px`;
+        ctxMenu.style.top = `${clientY}px`;
+        ctxMenu.style.display = 'block';
+    }
+
+function hideContextMenu() {
+        ctxMenu.style.display = 'none';
+    }
+
+
     canvas.addEventListener('contextmenu', (e) => {
         if (!tableState.isDM) return; 
         e.preventDefault();
@@ -203,20 +220,20 @@ function findSketchAt(worldX, worldY) {
         const rect = canvas.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
+        contextMenuWorldPoint = { x: worldX, y: worldY };
         contextSelectedToken = null;
         for (let i = tableState.tokens.length - 1; i >= 0; i--) {
             const t = tableState.tokens[i];
             if (Math.hypot(t.x - worldX, t.y - worldY) < t.size / 2) { contextSelectedToken = t; break; }
         }
-        if (contextSelectedToken) {
-            ctxMenu.style.left = `${e.clientX}px`; ctxMenu.style.top = `${e.clientY}px`; ctxMenu.style.display = 'block';
-        }
+
+        showContextMenuAt(e.clientX, e.clientY, contextSelectedToken ? 'token' : 'table');
     });
 
 
     canvas.addEventListener('mousedown', (e) => {
         if (e.button === 2) return; 
-        ctxMenu.style.display = 'none';
+        hideContextMenu();
         const rect = canvas.getBoundingClientRect();
         const worldX = (e.clientX - rect.left - tableState.camera.x) / tableState.camera.zoom;
         const worldY = (e.clientY - rect.top - tableState.camera.y) / tableState.camera.zoom;
@@ -400,7 +417,47 @@ function findSketchAt(worldX, worldY) {
     });
 
 
+function executeContextLoadMap() {
+        hideContextMenu();
+        selectLocalFile('MAP');
+    }
+
+
+function executeContextSpawnToken() {
+        hideContextMenu();
+        if (!contextMenuWorldPoint) return;
+        selectLocalFile('TOKEN', contextMenuWorldPoint);
+    }
+
+
+function executeContextClearMap() {
+        hideContextMenu();
+        if (!tableState.isDM || !tableState.mapSrc) return;
+        if (!confirm('Clear the current map?')) return;
+
+        tableState.mapSrc = null;
+        markTableDirty();
+        if (socket) socket.emit('updateMapImage', '');
+        draw();
+    }
+
+
+function executeContextClearTokens() {
+        hideContextMenu();
+        if (!tableState.isDM || !Array.isArray(tableState.tokens) || tableState.tokens.length === 0) return;
+        if (!confirm('Clear all tokens?')) return;
+
+        tableState.tokens = [];
+        contextSelectedToken = null;
+        markTableDirty();
+        broadcastTokensMatrixChange();
+        draw();
+    }
+
+
+
 function executeContextResize(newSize) {
+        hideContextMenu();
         if (!contextSelectedToken) return;
         contextSelectedToken.size = newSize;
         markTableDirty();
@@ -410,6 +467,7 @@ function executeContextResize(newSize) {
 
 
 function executeContextReveal() {
+        hideContextMenu();
         if (!contextSelectedToken) return; contextSelectedToken.hidden = !contextSelectedToken.hidden;
         markTableDirty();
         draw(); emitTokenVisibility(contextSelectedToken);
@@ -417,6 +475,7 @@ function executeContextReveal() {
 
 
 function executeContextDuplicate() {
+        hideContextMenu();
         if (!contextSelectedToken) return;
         const clone = {
             id: "token-" + Date.now() + Math.random(), src: contextSelectedToken.src,
@@ -428,6 +487,7 @@ function executeContextDuplicate() {
 
 
 function executeContextDelete() {
+        hideContextMenu();
         if (!contextSelectedToken) return;
         const deletedTokenId = contextSelectedToken.id;
         tableState.tokens = tableState.tokens.filter(t => t.id !== deletedTokenId);
