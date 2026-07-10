@@ -196,6 +196,15 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     pointer-events: none;
 }
 
+.video-box[data-cam-enabled="false"] .remote-media-status {
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #111;
+}
+
 
 
     .dice-container-overlay { position: absolute; width: 120px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; pointer-events: none; z-index: 40; text-align: center; transition: opacity 0.5s ease-in-out; }
