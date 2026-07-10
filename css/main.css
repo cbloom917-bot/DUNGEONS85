@@ -76,7 +76,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
     .toolbar { position: absolute; background: #000; border: 2px solid #fff; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; z-index: 10; }
     #toolbar-left { top: 4rem; left: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 110px; }
-    #toolbar-right { top: 4rem; right: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 180px; }
+    #toolbar-right { top: 4rem; right: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 170px; }
 
 
     .panel-label { font-size: 10px; text-align: center; border-bottom: 1px solid #fff; padding-bottom: 2px; text-transform: uppercase; color: #888; letter-spacing: 0.05em; cursor: move; padding-top: 2px; background: #111; margin: -0.5rem -0.5rem 0.2rem -0.5rem; }
@@ -85,12 +85,18 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
     .tool-btn { background: #000; color: #fff; border: 1px solid #fff; padding: 0.25rem; font-size: 11px; text-transform: uppercase; cursor: pointer; font-weight: bold; width: 100%; text-align: center; display: block; margin-bottom: 4px; transition: all 0.2s ease; }
     .tool-btn:hover { background: #fff; color: #000; }
+    .tool-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
+    .tool-row .tool-btn { margin-bottom: 0; }
+    .toolbar-empty-slot { visibility: hidden; pointer-events: none; }
+    .tool-divider { border-top: 1px dashed #444; margin: 4px 0; }
     .grid-dice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
 
 
     #ctx-menu { position: absolute; display: none; background: #000; border: 2px solid #fff; box-shadow: 4px 4px 0px 0px #fff; padding: 2px; z-index: 100; min-width: 150px; }
     .ctx-item { background: #000; color: #fff; border: none; padding: 6px 8px; font-size: 11px; font-weight: bold; text-transform: uppercase; text-align: left; width: 100%; display: block; cursor: pointer; }
     .ctx-item:hover { background: #fff; color: #000; }
+    .ctx-item.danger { color: #ff3333; }
+    .ctx-item.danger:hover { background: #ff3333; color: #000; }
 
 
     #torch-panel { top: 4rem; left: 40%; width: 240px; box-shadow: 4px 4px 0px 0px #fff; z-index: 60; }
