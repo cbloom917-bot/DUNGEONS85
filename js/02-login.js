@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.3 — 02-login.js
+// Dungeons '85 Public Beta 9.7.3.4.5 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -322,10 +322,10 @@ async function toggleLocalVideo() {
             showLocalMediaStatus("cam", "CAMERA OFF");
             publishLocalMediaState();
 
-            // Turning camera off must release the hardware track so laptop
-            // camera lights turn off. Rebuild the media call once so peers
-            // receive the remaining mic-only stream instead of a dead video track.
-            refreshPeerMediaConnections("camera-release");
+            // Turning camera off releases only this participant's local camera
+            // track. Do not rebuild PeerJS calls here: each call also carries an
+            // incoming remote stream, so closing those calls blanks every camera
+            // in this participant's local video ribbon.
             return;
         }
 
