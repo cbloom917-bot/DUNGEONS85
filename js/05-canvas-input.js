@@ -183,7 +183,9 @@ function findSketchAt(worldX, worldY) {
 function showContextMenuAt(clientX, clientY, mode) {
         const tokenActions = document.getElementById('ctx-token-actions');
         const tableActions = document.getElementById('ctx-table-actions');
+        const spawnTokenButton = document.querySelector('#ctx-table-actions button[onclick="executeContextSpawnToken()"]');
 
+        if (spawnTokenButton) spawnTokenButton.textContent = 'Spawn Token';
         if (tokenActions) tokenActions.style.display = mode === 'token' ? 'block' : 'none';
         if (tableActions) tableActions.style.display = mode === 'table' ? 'block' : 'none';
 
