@@ -250,31 +250,37 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', (data) => {
         if (!data || typeof data !== 'object') return;
-        
+
         let { roomName, playerName, isDM, peerId } = data;
 
-        if (typeof roomName !== 'string' || typeof playerName !== 'string') {
-            socket.emit('joinError', 'Invalid room or player name format.');
+        if (
+            typeof roomName !== 'string' ||
+            typeof playerName !== 'string' ||
+            typeof peerId !== 'string' ||
+            !peerId.trim()
+        ) {
+            socket.emit('joinError', 'Invalid room, player name, or peer identity format.');
             return;
         }
 
-        currentRoom = roomName.substring(0, 50).toUpperCase();
+        const requestedRoom = roomName.substring(0, 50).toUpperCase();
         playerName = playerName.substring(0, 50);
+        peerId = peerId.trim();
         isDM = Boolean(isDM);
-        
-        const roomAlreadyExisted = Boolean(roomCampaignStates[currentRoom]);
 
-        if (!roomCampaignStates[currentRoom]) {
+        const roomAlreadyExisted = Boolean(roomCampaignStates[requestedRoom]);
+
+        if (!roomCampaignStates[requestedRoom]) {
             if (!isDM) {
                 socket.emit('joinError', 'That room does not exist. Please check the name or wait for the DM to start the table.');
-                return; 
+                return;
             }
-            roomCampaignStates[currentRoom] = { 
-                mapSrc: null, 
-                tokens: [], 
-                players: [], 
-                wipeTimer: null, 
-                fowEnabled: false, 
+            roomCampaignStates[requestedRoom] = {
+                mapSrc: null,
+                tokens: [],
+                players: [],
+                wipeTimer: null,
+                fowEnabled: false,
                 fowPolygons: [],
                 isDarknessActive: false,
                 notes: [],
@@ -285,27 +291,58 @@ io.on('connection', (socket) => {
             incrementCommunityStat('tablesSinceLaunch');
         }
 
-        socket.join(currentRoom);
-        const state = roomCampaignStates[currentRoom];
+        const state = roomCampaignStates[requestedRoom];
+        const samePeerPlayers = state.players.filter(p => String(p.peerId) === peerId);
+        const existingPeerPlayer = samePeerPlayers.find(p => p.isDM === true) || samePeerPlayers[0] || null;
+        const effectiveIsDM = existingPeerPlayer ? Boolean(existingPeerPlayer.isDM) : isDM;
 
-        if (isDM) {
-            const existingDM = state.players.find(p => p.isDM === true);
-            if (existingDM && existingDM.socketId !== socket.id) {
-                socket.emit('joinError', 'This table already has a GM. Please join as a player.');
-                return; 
+        if (effectiveIsDM) {
+            const existingDM = state.players.find(p => p.isDM === true && String(p.peerId) !== peerId);
+            if (existingDM) {
+                socket.emit('joinError', {
+                    code: 'DM_SEAT_CONFLICT',
+                    message: 'This table already has a Dungeon Master. Please join as a player.'
+                });
+                return;
             }
         }
 
-        state.players = state.players.filter(p => p.socketId !== socket.id);
-        state.players.push({
-            socketId: socket.id,
-            peerId: String(peerId),
-            name: playerName,
-            isDM,
-            micEnabled: false,
-            camEnabled: false
+        const isSeatReclaim = samePeerPlayers.some(p => p.socketId !== socket.id);
+        const reclaimedPlayer = existingPeerPlayer
+            ? {
+                name: existingPeerPlayer.name,
+                isDM: Boolean(existingPeerPlayer.isDM),
+                micEnabled: Boolean(existingPeerPlayer.micEnabled),
+                camEnabled: Boolean(existingPeerPlayer.camEnabled)
+            }
+            : null;
+
+        samePeerPlayers.forEach((stalePlayer) => {
+            if (stalePlayer.socketId === socket.id) return;
+
+            const staleSocket = io.sockets.sockets.get(stalePlayer.socketId);
+            if (staleSocket) {
+                staleSocket.data.skipRoomCleanupForSeatReclaim = true;
+                staleSocket.disconnect(true);
+            }
         });
-        incrementCommunityStat('playersSinceLaunch');
+
+        state.players = state.players.filter(p => String(p.peerId) !== peerId);
+
+        socket.join(requestedRoom);
+        currentRoom = requestedRoom;
+
+        const joinedPlayer = {
+            socketId: socket.id,
+            peerId,
+            name: reclaimedPlayer ? reclaimedPlayer.name : playerName,
+            isDM: effectiveIsDM,
+            micEnabled: reclaimedPlayer ? reclaimedPlayer.micEnabled : false,
+            camEnabled: reclaimedPlayer ? reclaimedPlayer.camEnabled : false
+        };
+        state.players.push(joinedPlayer);
+
+        if (!existingPeerPlayer) incrementCommunityStat('playersSinceLaunch');
 
         if (state.wipeTimer) {
             clearTimeout(state.wipeTimer);
@@ -314,28 +351,27 @@ io.on('connection', (socket) => {
 
         // Send fog before map/tokens so joining players never render a covered
         // dungeon uncovered for a frame while the Fog of War state catches up.
-        socket.emit('syncFoW', { 
-            enabled: state.fowEnabled, 
-            polygons: state.fowPolygons, 
-            darkness: state.isDarknessActive 
+        socket.emit('syncFoW', {
+            enabled: state.fowEnabled,
+            polygons: state.fowPolygons,
+            darkness: state.isDarknessActive
         });
         if (state.mapSrc) socket.emit('syncMap', state.mapSrc);
-        socket.emit('syncTokens', state.tokens); 
-        socket.emit('syncNotes', isDM ? state.notes : getPublicNotes(state.notes));
+        socket.emit('syncTokens', state.tokens);
+        socket.emit('syncNotes', joinedPlayer.isDM ? state.notes : getPublicNotes(state.notes));
         socket.emit('syncSketches', state.sketches || []);
 
         socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
         socket.emit('syncVideoOrder', state.videoOrder || []);
-        
+
         io.to(currentRoom).emit('updatePlayerList', state.players);
 
-        // Only announce meaningful table-entry events.
-        // A GM websocket reconnect should be silent; otherwise brief transport
-        // closes spam the table log and look like new table creation.
-        if (isDM && !roomAlreadyExisted) {
-            io.to(currentRoom).emit('playerNotification', `${playerName} HAS CREATED THE TABLE`);
-        } else if (!isDM) {
-            io.to(currentRoom).emit('playerNotification', `${playerName} HAS JOINED THE TABLE`);
+        // Only announce meaningful table-entry events. Reclaimed peerId seats are
+        // reconnects, not new table participants, and remain silent.
+        if (joinedPlayer.isDM && !roomAlreadyExisted) {
+            io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS CREATED THE TABLE`);
+        } else if (!joinedPlayer.isDM && !isSeatReclaim) {
+            io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS JOINED THE TABLE`);
         }
     });
 
@@ -629,6 +665,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        if (socket.data.skipRoomCleanupForSeatReclaim) return;
+
         if (currentRoom && roomCampaignStates[currentRoom]) {
             const state = roomCampaignStates[currentRoom];
             const departingPlayer = state.players.find(p => p.socketId === socket.id);
