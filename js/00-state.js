@@ -14,7 +14,7 @@ const DEFAULT_MAP_ZOOM = 0.5;
 const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
-const D85_DEBUG_LOGS = false;
+const D85_DEBUG_LOGS = true;
 
 function debugLog(...args) {
     if (D85_DEBUG_LOGS) console.log(...args);
