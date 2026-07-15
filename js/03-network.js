@@ -1,9 +1,41 @@
-// Dungeons '85 Public Beta 9.7.3.4.6 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.9 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Networking: Socket.IO + PeerJS
 // ============================================================
+
+let networkRecoveryHooksInstalled = false;
+
+function requestNetworkRecovery(source) {
+    debugWarn(`DEBUG: Network recovery requested by ${source}`);
+
+    if (socket && !socket.connected) {
+        debugWarn("DEBUG: Requesting Socket.IO reconnect");
+        socket.connect();
+    }
+
+    if (peer && peer.disconnected && !peer.destroyed) {
+        debugWarn("DEBUG: Requesting PeerJS reconnect");
+        peer.reconnect();
+    }
+}
+
+function installNetworkRecoveryHooksOnce() {
+    if (networkRecoveryHooksInstalled) return;
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            requestNetworkRecovery('visibilitychange');
+        }
+    });
+
+    window.addEventListener('online', () => {
+        requestNetworkRecovery('online');
+    });
+
+    networkRecoveryHooksInstalled = true;
+}
 
 function initHybridMediaVttStack(roomName, playerName) {
     debugLog("DEBUG: initHybridMediaVttStack started", roomName, playerName);
@@ -12,6 +44,9 @@ function initHybridMediaVttStack(roomName, playerName) {
     hasReceivedInitialMapSync = false;
     hasReceivedInitialNotesSync = false;
     hasReceivedInitialSketchSync = false;
+
+    let peerOpenHandled = false;
+    installNetworkRecoveryHooksOnce();
 
     if (socket) {
         socket.disconnect();
@@ -36,7 +71,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
     peer.on('disconnected', () => {
         debugWarn("DEBUG: PeerJS disconnected; attempting reconnect");
-        peer.reconnect();
+        if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
     });
 
     peer.on('close', () => {
@@ -51,6 +86,12 @@ function initHybridMediaVttStack(roomName, playerName) {
         debugLog("DEBUG: PeerJS open", peerId);
         localPeerId = peerId;
 
+        if (peerOpenHandled) {
+            debugWarn("DEBUG: PeerJS re-open after reconnect; preserving existing Socket.IO client.");
+            return;
+        }
+
+        peerOpenHandled = true;
         debugCount("DEBUG: Creating Socket.IO client");
 
         socket = io(SERVER_URL, {
@@ -121,7 +162,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 roomName,
                 playerName,
                 isDM: tableState.isDM,
-                peerId
+                peerId: localPeerId
             });
 
             // The server now owns join/rejoin notifications.
@@ -129,8 +170,13 @@ function initHybridMediaVttStack(roomName, playerName) {
             // Socket.IO fires this connect handler again after normal reconnects.
         });
 
-        socket.on('joinError', (message) => {
-            alert(message);
+        socket.on('joinError', (error) => {
+            const errorCode = error && typeof error === 'object' ? error.code : null;
+            const message = error && typeof error === 'object' ? error.message : error;
+
+            alert(typeof message === 'string' ? message : 'Unable to join this table.');
+
+            if (errorCode === 'DM_SEAT_CONFLICT') return;
             window.location.reload();
         });
 
@@ -147,7 +193,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             playersArray.forEach(p => {
-                if (p.peerId === peerId) return;
+                if (p.peerId === localPeerId) return;
                 ensurePlayerVideoSeat(p);
             });
 
@@ -158,7 +204,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 // that already has live local media should offer it to the newcomer.
                 // Browsers with mic/camera still off keep their silent placeholder
                 // stream and do not create unnecessary calls.
-                if (p.peerId !== peerId && !wasKnown && hasLocalMediaTracks()) {
+                if (p.peerId !== localPeerId && !wasKnown && hasLocalMediaTracks()) {
                     callPeerWithLocalStream(p, "new-peer-media-offer");
                 }
             });
