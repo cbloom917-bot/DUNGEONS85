@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.2 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.9.3 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -7,12 +7,56 @@
 
 let networkRecoveryHooksInstalled = false;
 let peerMediaRecoveryTimers = [];
+let peerHardRecoveryTimer = null;
+let peerHardRecoveryInProgress = false;
+let rebuildCurrentPeerClient = null;
 
 const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
+const PEER_HARD_RECOVERY_DELAY_MS = 14000;
 
 function clearPeerMediaRecoveryTimers() {
     peerMediaRecoveryTimers.forEach(timer => clearTimeout(timer));
     peerMediaRecoveryTimers = [];
+}
+
+function clearPeerHardRecoveryTimer() {
+    if (!peerHardRecoveryTimer) return;
+    clearTimeout(peerHardRecoveryTimer);
+    peerHardRecoveryTimer = null;
+}
+
+function schedulePeerHardRecoveryCheck(source) {
+    if (source !== 'peer-reopen' && source !== 'socket-reconnect') return;
+
+    clearPeerHardRecoveryTimer();
+    peerHardRecoveryTimer = setTimeout(() => {
+        peerHardRecoveryTimer = null;
+
+        if (peerHardRecoveryInProgress || !socket || !socket.connected) return;
+        if (!peer || peer.destroyed || !hasLocalMediaTracks()) return;
+        if (!Array.isArray(currentActiveRoomArray)) return;
+
+        const remotePlayers = currentActiveRoomArray.filter(player =>
+            player && player.peerId && player.peerId !== localPeerId
+        );
+        if (!remotePlayers.length) return;
+
+        const missingPlayers = remotePlayers.filter(player =>
+            !hasActivePeerCall(player.peerId, {
+                includeDisconnected: true,
+                closePruned: true
+            })
+        );
+        if (!missingPlayers.length) return;
+
+        debugWarn(
+            `DEBUG: PeerJS reports open but ${missingPlayers.length} media peer(s) remain unreachable after ${source}; forcing same-ID broker re-registration.`
+        );
+
+        if (typeof rebuildCurrentPeerClient === 'function') {
+            rebuildCurrentPeerClient(`unreachable-after-${source}`);
+        }
+    }, PEER_HARD_RECOVERY_DELAY_MS);
 }
 
 function recoverMissingPeerMediaCalls(source) {
@@ -29,6 +73,7 @@ function recoverMissingPeerMediaCalls(source) {
 
 function schedulePeerMediaRecovery(source) {
     clearPeerMediaRecoveryTimers();
+    schedulePeerHardRecoveryCheck(source);
 
     PEER_MEDIA_RECOVERY_DELAYS_MS.forEach(delayMs => {
         const timer = setTimeout(() => {
@@ -48,7 +93,7 @@ function requestNetworkRecovery(source) {
         socket.connect();
     }
 
-    if (peer && peer.disconnected && !peer.destroyed) {
+    if (!peerHardRecoveryInProgress && peer && peer.disconnected && !peer.destroyed) {
         debugWarn("DEBUG: Requesting PeerJS reconnect");
         peer.reconnect();
     }
@@ -70,6 +115,66 @@ function installNetworkRecoveryHooksOnce() {
     networkRecoveryHooksInstalled = true;
 }
 
+function installIncomingPeerCallHandler(peerClient) {
+    if (!peerClient || typeof peerClient.on !== 'function') return;
+
+    peerClient.on('call', (call) => {
+        if (peer !== peerClient) {
+            try {
+                if (call && typeof call.close === 'function') call.close();
+            } catch (err) {
+                debugWarn("DEBUG: Failed to close call delivered to superseded PeerJS client:", err);
+            }
+            return;
+        }
+
+        debugLog("DEBUG: Incoming PeerJS call from", call.peer);
+
+        const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
+        ensurePlayerVideoSeat({
+            peerId: call.peer,
+            name: caller ? caller.name : 'Player',
+            isDM: caller ? caller.isDM : false
+        });
+
+        if (!localStream) {
+            debugWarn("DEBUG: No local stream available to answer call");
+            try {
+                if (call && typeof call.close === 'function') call.close();
+            } catch (err) {
+                debugWarn("DEBUG: Failed to close unanswered PeerJS call:", err);
+            }
+            return;
+        }
+
+        const callerPeerId = String(call.peer || '');
+
+        // Keep a single live PeerJS media call per remote peer. If a reconnect
+        // or camera refresh creates a new incoming call, close the old call
+        // before accepting the new one instead of using a second timestamp
+        // dedupe state machine.
+        closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
+        registerPeerCall(callerPeerId, call);
+        call.answer(localStream);
+        setTimeout(() => applyVttVideoSenderSettings(call), 0);
+
+        call.on('stream', (remoteStream) => {
+            markPeerCallEstablished(call);
+            const displayName = caller ? caller.name : "Player";
+            addVideoFeed(remoteStream, callerPeerId, displayName, caller ? caller.isDM : false);
+        });
+
+        call.on('close', () => {
+            const box = document.getElementById(`video-${callerPeerId}`);
+            if (box && !hasActivePeerCall(callerPeerId)) refreshRemoteMediaStatus(box, null);
+        });
+
+        call.on('error', (err) => {
+            handlePeerCallError(callerPeerId, call, err, 'Incoming PeerJS call error');
+        });
+    });
+}
+
 function initHybridMediaVttStack(roomName, playerName) {
     debugLog("DEBUG: initHybridMediaVttStack started", roomName, playerName);
     hasReceivedInitialTokenSync = false;
@@ -81,6 +186,9 @@ function initHybridMediaVttStack(roomName, playerName) {
     let peerOpenHandled = false;
     let hasSocketConnectedOnce = false;
     clearPeerMediaRecoveryTimers();
+    clearPeerHardRecoveryTimer();
+    peerHardRecoveryInProgress = false;
+    rebuildCurrentPeerClient = null;
     installNetworkRecoveryHooksOnce();
 
     if (socket) {
@@ -102,22 +210,124 @@ function initHybridMediaVttStack(roomName, playerName) {
         }
     };
 
+    const sameIdRetryDelaysMs = [500, 1500, 3000];
+
+    const createReplacementPeerClient = (preservedPeerId, retryIndex = 0) => {
+        if (!preservedPeerId) {
+            peerHardRecoveryInProgress = false;
+            debugError("DEBUG: Cannot rebuild PeerJS client without a preserved peerId.");
+            return;
+        }
+
+        const replacementPeer = new Peer(preservedPeerId, webrtcIceConfig);
+        peer = replacementPeer;
+        installIncomingPeerCallHandler(replacementPeer);
+
+        replacementPeer.on('disconnected', () => {
+            if (peer !== replacementPeer || peerHardRecoveryInProgress) return;
+            debugWarn("DEBUG: Rebuilt PeerJS client disconnected; attempting reconnect");
+            if (replacementPeer.disconnected && !replacementPeer.destroyed) replacementPeer.reconnect();
+        });
+
+        replacementPeer.on('close', () => {
+            if (peer === replacementPeer) debugWarn("DEBUG: Rebuilt PeerJS client closed");
+        });
+
+        replacementPeer.on('error', (err) => {
+            if (peer !== replacementPeer) return;
+            debugError("DEBUG: Rebuilt PeerJS client error:", err);
+
+            const errorType = String(err?.type || '');
+            if (peerHardRecoveryInProgress && errorType === 'unavailable-id' && retryIndex < sameIdRetryDelaysMs.length) {
+                const retryDelay = sameIdRetryDelaysMs[retryIndex];
+                debugWarn(`DEBUG: Preserved PeerJS ID is not released yet; retrying same-ID registration in ${retryDelay} ms.`);
+
+                try {
+                    replacementPeer.destroy();
+                } catch (destroyErr) {
+                    debugWarn("DEBUG: Failed to destroy unavailable replacement PeerJS client:", destroyErr);
+                }
+
+                setTimeout(() => {
+                    if (peer === replacementPeer || !peer) {
+                        createReplacementPeerClient(preservedPeerId, retryIndex + 1);
+                    }
+                }, retryDelay);
+                return;
+            }
+
+            if (peerHardRecoveryInProgress && errorType === 'unavailable-id') {
+                peerHardRecoveryInProgress = false;
+                debugError("DEBUG: Preserved PeerJS ID could not be re-registered after bounded retries.");
+            }
+        });
+
+        replacementPeer.on('open', (peerId) => {
+            if (peer !== replacementPeer) return;
+
+            debugLog("DEBUG: PeerJS hard re-registration open", peerId);
+            localPeerId = peerId;
+            peerHardRecoveryInProgress = false;
+
+            const localVideoBox = document.getElementById('local-video-container');
+            if (localVideoBox) localVideoBox.dataset.peerId = localPeerId || "local";
+
+            schedulePeerMediaRecovery('peer-hard-reregister');
+        });
+    };
+
+    rebuildCurrentPeerClient = (reason) => {
+        if (peerHardRecoveryInProgress) return;
+
+        const preservedPeerId = localPeerId || peer?.id;
+        if (!preservedPeerId) {
+            debugError("DEBUG: PeerJS hard recovery skipped because no peerId is available.");
+            return;
+        }
+
+        peerHardRecoveryInProgress = true;
+        clearPeerMediaRecoveryTimers();
+        clearPeerHardRecoveryTimer();
+        closeAllPeerConnections();
+
+        const stalePeer = peer;
+        debugWarn(`DEBUG: Rebuilding PeerJS signaling client with preserved ID ${preservedPeerId} after ${reason}.`);
+
+        try {
+            if (stalePeer && !stalePeer.destroyed) stalePeer.destroy();
+        } catch (err) {
+            debugWarn("DEBUG: Failed to destroy stale PeerJS client before hard recovery:", err);
+        }
+
+        if (peer === stalePeer) peer = null;
+
+        setTimeout(() => {
+            if (peerHardRecoveryInProgress && !peer) {
+                createReplacementPeerClient(preservedPeerId);
+            }
+        }, 250);
+    };
+
     peer = new Peer(undefined, webrtcIceConfig);
+    const initialPeer = peer;
+    installIncomingPeerCallHandler(initialPeer);
 
-    peer.on('disconnected', () => {
+    initialPeer.on('disconnected', () => {
+        if (peer !== initialPeer) return;
         debugWarn("DEBUG: PeerJS disconnected; attempting reconnect");
-        if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
+        if (initialPeer.disconnected && !initialPeer.destroyed) initialPeer.reconnect();
     });
 
-    peer.on('close', () => {
-        debugWarn("DEBUG: PeerJS closed");
+    initialPeer.on('close', () => {
+        if (peer === initialPeer) debugWarn("DEBUG: PeerJS closed");
     });
 
-    peer.on('error', (err) => {
-        debugError("DEBUG: PeerJS error:", err);
+    initialPeer.on('error', (err) => {
+        if (peer === initialPeer) debugError("DEBUG: PeerJS error:", err);
     });
 
-    peer.on('open', (peerId) => {
+    initialPeer.on('open', (peerId) => {
+        if (peer !== initialPeer) return;
         debugLog("DEBUG: PeerJS open", peerId);
         localPeerId = peerId;
 
@@ -269,52 +479,6 @@ function initHybridMediaVttStack(roomName, playerName) {
             sortVideoRibbon();
         });
 
-        peer.on('call', (call) => {
-            debugLog("DEBUG: Incoming PeerJS call from", call.peer);
-
-            const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
-            ensurePlayerVideoSeat({
-                peerId: call.peer,
-                name: caller ? caller.name : 'Player',
-                isDM: caller ? caller.isDM : false
-            });
-
-            if (!localStream) {
-                debugWarn("DEBUG: No local stream available to answer call");
-                try {
-                    if (call && typeof call.close === 'function') call.close();
-                } catch (err) {
-                    debugWarn("DEBUG: Failed to close unanswered PeerJS call:", err);
-                }
-                return;
-            }
-
-            const callerPeerId = String(call.peer || '');
-
-            // Keep a single live PeerJS media call per remote peer. If a reconnect
-            // or camera refresh creates a new incoming call, close the old call
-            // before accepting the new one instead of using a second timestamp
-            // dedupe state machine.
-            closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
-            registerPeerCall(callerPeerId, call);
-            call.answer(localStream);
-            setTimeout(() => applyVttVideoSenderSettings(call), 0);
-
-            call.on('stream', (remoteStream) => {
-                markPeerCallEstablished(call);
-                const displayName = caller ? caller.name : "Player";
-                addVideoFeed(remoteStream, callerPeerId, displayName, caller ? caller.isDM : false);
-            });
-
-            call.on('close', () => {
-                const box = document.getElementById(`video-${callerPeerId}`);
-                if (box && !hasActivePeerCall(callerPeerId)) refreshRemoteMediaStatus(box, null);
-            });
-
-            call.on('error', (err) => {
-                handlePeerCallError(callerPeerId, call, err, 'Incoming PeerJS call error');
-            });
-        });
 
         socket.on('syncMap', (mapSrc) => {
             if (typeof mapSrc !== 'string') return;
