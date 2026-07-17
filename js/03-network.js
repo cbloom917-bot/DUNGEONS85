@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.10.1 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.10.2 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -15,6 +15,7 @@ let peerCallStartupFailures = new Map();
 let beginFreshPeerIdentityMigration = null;
 let socketSeatConfirmed = false;
 let pendingPeerHardRecoveryReason = null;
+let pendingIdentityReplacementVideoOrder = null;
 
 const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
 const PEER_HARD_RECOVERY_DELAY_MS = 14000;
@@ -256,6 +257,22 @@ function installIncomingPeerCallHandler(peerClient) {
     });
 }
 
+function queueIdentityReplacementVideoOrder(peerOrder) {
+    pendingIdentityReplacementVideoOrder = Array.isArray(peerOrder)
+        ? peerOrder.map(peerId => String(peerId || '')).filter(Boolean)
+        : null;
+}
+
+function applyPendingIdentityReplacementVideoOrder() {
+    if (!Array.isArray(pendingIdentityReplacementVideoOrder)) return false;
+
+    const peerOrder = pendingIdentityReplacementVideoOrder;
+    pendingIdentityReplacementVideoOrder = null;
+    applySyncedVideoOrder(peerOrder);
+    debugWarn('DEBUG: Applied authoritative ribbon order after PeerJS identity replacement.');
+    return true;
+}
+
 function initHybridMediaVttStack(roomName, playerName) {
     debugLog("DEBUG: initHybridMediaVttStack started", roomName, playerName);
     hasReceivedInitialTokenSync = false;
@@ -287,6 +304,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     beginFreshPeerIdentityMigration = null;
     socketSeatConfirmed = false;
     pendingPeerHardRecoveryReason = null;
+    pendingIdentityReplacementVideoOrder = null;
     installNetworkRecoveryHooksOnce();
 
     if (socket) {
@@ -734,6 +752,8 @@ function initHybridMediaVttStack(roomName, playerName) {
             const newPeerId = String(identity.newPeerId || '');
             if (!oldPeerId || !newPeerId || oldPeerId === newPeerId) return;
 
+            queueIdentityReplacementVideoOrder(identity.videoOrder);
+
             const changed = replacePeerIdentityLocally(oldPeerId, newPeerId);
             if (changed) {
                 debugWarn(`DEBUG: Applied PeerJS identity replacement ${oldPeerId} -> ${newPeerId}.`);
@@ -785,6 +805,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             currentActiveRoomArray = sortPlayersForRibbon(playersArray);
+            const appliedIdentityReplacementOrder = applyPendingIdentityReplacementVideoOrder();
             resumeReconnectRecoveryAfterSeatConfirmation();
 
             // A returning participant can rejoin Socket.IO before its PeerJS
@@ -796,7 +817,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 schedulePeerMediaRecovery('player-list-return');
             }
 
-            sortVideoRibbon();
+            if (!appliedIdentityReplacementOrder) sortVideoRibbon();
         });
 
 
@@ -1021,6 +1042,10 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncVideoOrder', (peerOrder) => {
+            if (Array.isArray(pendingIdentityReplacementVideoOrder)) {
+                queueIdentityReplacementVideoOrder(peerOrder);
+                return;
+            }
             applySyncedVideoOrder(peerOrder);
         });
     });
