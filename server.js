@@ -245,6 +245,32 @@ function bumpTokenRevision(token) {
     return token.rev;
 }
 
+function replacePeerIdInRoomState(state, oldPeerId, newPeerId) {
+    if (!state) return;
+
+    const oldKey = String(oldPeerId || '');
+    const newKey = String(newPeerId || '');
+    if (!oldKey || !newKey || oldKey === newKey) return;
+
+    const participant = Array.isArray(state.players)
+        ? state.players.find(player => String(player.peerId) === oldKey)
+        : null;
+    if (participant) participant.peerId = newKey;
+
+    const seen = new Set();
+    state.videoOrder = (Array.isArray(state.videoOrder) ? state.videoOrder : [])
+        .map(peerId => String(peerId) === oldKey ? newKey : String(peerId))
+        .filter(peerId => {
+            if (!peerId || seen.has(peerId)) return false;
+            seen.add(peerId);
+            return true;
+        });
+
+    if (String(state.initiativePeerId || '') === oldKey) {
+        state.initiativePeerId = newKey;
+    }
+}
+
 io.on('connection', (socket) => {
     let currentRoom = null;
 
@@ -291,88 +317,203 @@ io.on('connection', (socket) => {
             incrementCommunityStat('tablesSinceLaunch');
         }
 
-        const state = roomCampaignStates[requestedRoom];
-        const samePeerPlayers = state.players.filter(p => String(p.peerId) === peerId);
-        const existingPeerPlayer = samePeerPlayers.find(p => p.isDM === true) || samePeerPlayers[0] || null;
-        const effectiveIsDM = existingPeerPlayer ? Boolean(existingPeerPlayer.isDM) : isDM;
+        const emitDmSeatConflict = () => {
+            socket.emit('joinError', {
+                code: 'DM_SEAT_CONFLICT',
+                message: 'This table already has a Dungeon Master. Please join as a player.'
+            });
+        };
 
-        if (effectiveIsDM) {
-            const existingDM = state.players.find(p => p.isDM === true && String(p.peerId) !== peerId);
-            if (existingDM) {
-                socket.emit('joinError', {
-                    code: 'DM_SEAT_CONFLICT',
-                    message: 'This table already has a Dungeon Master. Please join as a player.'
+        const admitSocket = (displacedDM = null) => {
+            const state = roomCampaignStates[requestedRoom];
+            if (!state) return;
+
+            const displacedPeerId = displacedDM ? String(displacedDM.peerId || '') : '';
+
+            const samePeerPlayers = state.players.filter(player => String(player.peerId) === peerId);
+            const existingPeerPlayer = samePeerPlayers.find(player => player.isDM === true) || samePeerPlayers[0] || null;
+            const preservedSeat = existingPeerPlayer || displacedDM;
+            const effectiveIsDM = existingPeerPlayer
+                ? Boolean(existingPeerPlayer.isDM)
+                : (displacedDM ? true : isDM);
+
+            if (displacedDM) {
+                replacePeerIdInRoomState(state, displacedDM.peerId, peerId);
+
+                const staleDmSocket = io.sockets.sockets.get(displacedDM.socketId);
+                if (staleDmSocket && staleDmSocket.id !== socket.id) {
+                    staleDmSocket.data.skipRoomCleanupForSeatReclaim = true;
+                    staleDmSocket.disconnect(true);
+                }
+
+                state.players = state.players.filter(player => player.socketId !== displacedDM.socketId);
+            }
+
+            const isSeatReclaim = Boolean(displacedDM) || samePeerPlayers.some(player => player.socketId !== socket.id);
+
+            samePeerPlayers.forEach((stalePlayer) => {
+                if (stalePlayer.socketId === socket.id) return;
+
+                const staleSocket = io.sockets.sockets.get(stalePlayer.socketId);
+                if (staleSocket) {
+                    staleSocket.data.skipRoomCleanupForSeatReclaim = true;
+                    staleSocket.disconnect(true);
+                }
+            });
+
+            state.players = state.players.filter(player => String(player.peerId) !== peerId);
+
+            socket.join(requestedRoom);
+            currentRoom = requestedRoom;
+
+            const joinedPlayer = {
+                socketId: socket.id,
+                peerId,
+                name: preservedSeat ? preservedSeat.name : playerName,
+                isDM: effectiveIsDM,
+                micEnabled: preservedSeat ? Boolean(preservedSeat.micEnabled) : false,
+                camEnabled: preservedSeat ? Boolean(preservedSeat.camEnabled) : false
+            };
+            state.players.push(joinedPlayer);
+
+            if (!preservedSeat) incrementCommunityStat('playersSinceLaunch');
+
+            if (state.wipeTimer) {
+                clearTimeout(state.wipeTimer);
+                state.wipeTimer = null;
+            }
+
+            // Send fog before map/tokens so joining players never render a covered
+            // dungeon uncovered for a frame while the Fog of War state catches up.
+            socket.emit('syncFoW', {
+                enabled: state.fowEnabled,
+                polygons: state.fowPolygons,
+                darkness: state.isDarknessActive
+            });
+            if (state.mapSrc) socket.emit('syncMap', state.mapSrc);
+            socket.emit('syncTokens', state.tokens);
+            socket.emit('syncNotes', joinedPlayer.isDM ? state.notes : getPublicNotes(state.notes));
+            socket.emit('syncSketches', state.sketches || []);
+            socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
+            socket.emit('syncVideoOrder', state.videoOrder || []);
+
+            if (displacedDM && displacedPeerId && displacedPeerId !== peerId) {
+                io.to(currentRoom).emit('peerIdentityReplaced', {
+                    oldPeerId: displacedPeerId,
+                    newPeerId: peerId
                 });
+            }
+
+            io.to(currentRoom).emit('updatePlayerList', state.players);
+            io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
+            if (displacedDM && state.initiativePeerId) {
+                io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
+            }
+
+            if (joinedPlayer.isDM && !roomAlreadyExisted) {
+                io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS CREATED THE TABLE`);
+            } else if (!joinedPlayer.isDM && !isSeatReclaim) {
+                io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS JOINED THE TABLE`);
+            }
+        };
+
+        const state = roomCampaignStates[requestedRoom];
+        const samePeerPlayer = state.players.find(player => String(player.peerId) === peerId) || null;
+        const effectiveIsDM = samePeerPlayer ? Boolean(samePeerPlayer.isDM) : isDM;
+
+        if (!effectiveIsDM) {
+            admitSocket();
+            return;
+        }
+
+        const existingDM = state.players.find(player => player.isDM === true && String(player.peerId) !== peerId);
+        if (!existingDM) {
+            admitSocket();
+            return;
+        }
+
+        const occupyingDmSocket = io.sockets.sockets.get(existingDM.socketId);
+        if (!occupyingDmSocket || !occupyingDmSocket.connected) {
+            admitSocket(existingDM);
+            return;
+        }
+
+        // A sleeping/zombie socket can remain in Socket.IO's registry until its
+        // ping timeout expires. Probe the browser before treating the seat as live.
+        occupyingDmSocket.timeout(2000).emit('seatProbe', (err) => {
+            const currentState = roomCampaignStates[requestedRoom];
+            if (!currentState) return;
+
+            const currentDM = currentState.players.find(player => player.isDM === true && String(player.peerId) !== peerId);
+            if (!currentDM) {
+                admitSocket();
                 return;
             }
-        }
 
-        const isSeatReclaim = samePeerPlayers.some(p => p.socketId !== socket.id);
-        const reclaimedPlayer = existingPeerPlayer
-            ? {
-                name: existingPeerPlayer.name,
-                isDM: Boolean(existingPeerPlayer.isDM),
-                micEnabled: Boolean(existingPeerPlayer.micEnabled),
-                camEnabled: Boolean(existingPeerPlayer.camEnabled)
+            if (currentDM.socketId !== existingDM.socketId) {
+                emitDmSeatConflict();
+                return;
             }
-            : null;
 
-        samePeerPlayers.forEach((stalePlayer) => {
-            if (stalePlayer.socketId === socket.id) return;
-
-            const staleSocket = io.sockets.sockets.get(stalePlayer.socketId);
-            if (staleSocket) {
-                staleSocket.data.skipRoomCleanupForSeatReclaim = true;
-                staleSocket.disconnect(true);
+            if (err) {
+                admitSocket(currentDM);
+                return;
             }
+
+            emitDmSeatConflict();
         });
+    });
 
-        state.players = state.players.filter(p => String(p.peerId) !== peerId);
-
-        socket.join(requestedRoom);
-        currentRoom = requestedRoom;
-
-        const joinedPlayer = {
-            socketId: socket.id,
-            peerId,
-            name: reclaimedPlayer ? reclaimedPlayer.name : playerName,
-            isDM: effectiveIsDM,
-            micEnabled: reclaimedPlayer ? reclaimedPlayer.micEnabled : false,
-            camEnabled: reclaimedPlayer ? reclaimedPlayer.camEnabled : false
+    socket.on('replacePeerIdentity', (identity, acknowledge) => {
+        const respond = (payload) => {
+            if (typeof acknowledge === 'function') acknowledge(payload);
         };
-        state.players.push(joinedPlayer);
 
-        if (!existingPeerPlayer) incrementCommunityStat('playersSinceLaunch');
+        const rejectIdentity = (code, message) => {
+            const payload = { ok: false, code, message };
+            socket.emit('identityError', payload);
+            respond(payload);
+        };
 
-        if (state.wipeTimer) {
-            clearTimeout(state.wipeTimer);
-            state.wipeTimer = null;
+        if (!currentRoom || !roomCampaignStates[currentRoom]) {
+            rejectIdentity('NO_ACTIVE_ROOM', 'Media identity migration failed because the table seat is unavailable.');
+            return;
         }
 
-        // Send fog before map/tokens so joining players never render a covered
-        // dungeon uncovered for a frame while the Fog of War state catches up.
-        socket.emit('syncFoW', {
-            enabled: state.fowEnabled,
-            polygons: state.fowPolygons,
-            darkness: state.isDarknessActive
-        });
-        if (state.mapSrc) socket.emit('syncMap', state.mapSrc);
-        socket.emit('syncTokens', state.tokens);
-        socket.emit('syncNotes', joinedPlayer.isDM ? state.notes : getPublicNotes(state.notes));
-        socket.emit('syncSketches', state.sketches || []);
+        if (!identity || typeof identity !== 'object') {
+            rejectIdentity('BAD_IDENTITY_PAYLOAD', 'Media identity migration received an invalid payload.');
+            return;
+        }
 
-        socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
-        socket.emit('syncVideoOrder', state.videoOrder || []);
+        const oldPeerId = typeof identity.oldPeerId === 'string' ? identity.oldPeerId.trim() : '';
+        const newPeerId = typeof identity.newPeerId === 'string' ? identity.newPeerId.trim() : '';
+        if (!oldPeerId || !newPeerId || oldPeerId === newPeerId) {
+            rejectIdentity('BAD_IDENTITY_PAYLOAD', 'Media identity migration requires distinct peer identities.');
+            return;
+        }
 
+        const state = roomCampaignStates[currentRoom];
+        const participant = state.players.find(player => player.socketId === socket.id);
+        if (!participant || String(participant.peerId) !== oldPeerId) {
+            rejectIdentity('NOT_SEAT_OWNER', 'Media identity migration was rejected because this socket does not own the seat.');
+            return;
+        }
+
+        if (state.players.some(player => String(player.peerId) === newPeerId)) {
+            rejectIdentity('ID_IN_USE', 'Media identity migration was rejected because the replacement identity is already in use.');
+            return;
+        }
+
+        replacePeerIdInRoomState(state, oldPeerId, newPeerId);
+
+        // This event must precede updatePlayerList so clients can rename the
+        // existing seat in place instead of removing and appending a new box.
+        io.to(currentRoom).emit('peerIdentityReplaced', { oldPeerId, newPeerId });
         io.to(currentRoom).emit('updatePlayerList', state.players);
+        io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
+        io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId || null);
 
-        // Only announce meaningful table-entry events. Reclaimed peerId seats are
-        // reconnects, not new table participants, and remain silent.
-        if (joinedPlayer.isDM && !roomAlreadyExisted) {
-            io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS CREATED THE TABLE`);
-        } else if (!joinedPlayer.isDM && !isSeatReclaim) {
-            io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS JOINED THE TABLE`);
-        }
+        respond({ ok: true, oldPeerId, newPeerId });
     });
 
 
