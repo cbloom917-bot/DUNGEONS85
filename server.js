@@ -245,6 +245,21 @@ function bumpTokenRevision(token) {
     return token.rev;
 }
 
+function replacePeerIdInOrderedList(list, oldPeerId, newPeerId) {
+    const oldKey = String(oldPeerId || '');
+    const newKey = String(newPeerId || '');
+    if (!Array.isArray(list) || !oldKey || !newKey) return Array.isArray(list) ? [...list] : [];
+
+    const seen = new Set();
+    return list
+        .map(peerId => String(peerId) === oldKey ? newKey : String(peerId))
+        .filter(peerId => {
+            if (!peerId || seen.has(peerId)) return false;
+            seen.add(peerId);
+            return true;
+        });
+}
+
 function replacePeerIdInRoomState(state, oldPeerId, newPeerId) {
     if (!state) return;
 
@@ -257,24 +272,32 @@ function replacePeerIdInRoomState(state, oldPeerId, newPeerId) {
         : null;
     if (participant) participant.peerId = newKey;
 
-    const seen = new Set();
-    state.videoOrder = (Array.isArray(state.videoOrder) ? state.videoOrder : [])
-        .map(peerId => String(peerId) === oldKey ? newKey : String(peerId))
-        .filter(peerId => {
-            if (!peerId || seen.has(peerId)) return false;
-            seen.add(peerId);
-            return true;
-        });
+    state.videoOrder = replacePeerIdInOrderedList(state.videoOrder, oldKey, newKey);
+    state.tableOrder = replacePeerIdInOrderedList(state.tableOrder, oldKey, newKey);
 
     if (String(state.initiativePeerId || '') === oldKey) {
         state.initiativePeerId = newKey;
     }
+
+    if (state.lastDmSeat && String(state.lastDmSeat.peerId || '') === oldKey) {
+        state.lastDmSeat.peerId = newKey;
+        state.lastDmSeat.videoOrder = replacePeerIdInOrderedList(state.lastDmSeat.videoOrder, oldKey, newKey);
+        state.lastDmSeat.tableOrder = replacePeerIdInOrderedList(state.lastDmSeat.tableOrder, oldKey, newKey);
+        if (String(state.lastDmSeat.initiativePeerId || '') === oldKey) {
+            state.lastDmSeat.initiativePeerId = newKey;
+        }
+    }
 }
 
-function completeVideoOrderAfterSeatReclaim(state, reclaimedPeerId, isDM) {
+function getOrderIndex(order, peerId, fallbackIndex = 0) {
+    const key = String(peerId || '');
+    const index = Array.isArray(order) ? order.map(String).indexOf(key) : -1;
+    return index >= 0 ? index : Math.max(0, Number(fallbackIndex) || 0);
+}
+
+function completeActiveOrder(state, sourceOrder, preferredPeerId, preferredIndex = 0) {
     if (!state) return [];
 
-    const reclaimedKey = String(reclaimedPeerId || '');
     const activePlayers = Array.isArray(state.players) ? state.players : [];
     const activePeerIds = new Set(
         activePlayers
@@ -282,8 +305,9 @@ function completeVideoOrderAfterSeatReclaim(state, reclaimedPeerId, isDM) {
             .filter(Boolean)
     );
 
+    const preferredKey = String(preferredPeerId || '');
     const seen = new Set();
-    const completedOrder = (Array.isArray(state.videoOrder) ? state.videoOrder : [])
+    const completed = (Array.isArray(sourceOrder) ? sourceOrder : [])
         .map(peerId => String(peerId || ''))
         .filter(peerId => {
             if (!peerId || !activePeerIds.has(peerId) || seen.has(peerId)) return false;
@@ -291,27 +315,101 @@ function completeVideoOrderAfterSeatReclaim(state, reclaimedPeerId, isDM) {
             return true;
         });
 
-    // If the old DM was missing from an incomplete custom order, do not append the
-    // reclaimed DM behind every player. Use the normal DM-first default. When the
-    // displaced identity was present, replacePeerIdInRoomState already preserved
-    // its exact custom position and this branch does nothing.
-    if (reclaimedKey && activePeerIds.has(reclaimedKey) && !seen.has(reclaimedKey)) {
-        seen.add(reclaimedKey);
-        if (isDM) completedOrder.unshift(reclaimedKey);
-        else completedOrder.push(reclaimedKey);
+    if (preferredKey && activePeerIds.has(preferredKey) && !seen.has(preferredKey)) {
+        seen.add(preferredKey);
+        const insertAt = Math.max(0, Math.min(completed.length, Number(preferredIndex) || 0));
+        completed.splice(insertAt, 0, preferredKey);
     }
 
-    // Keep the server order complete so later syncs cannot prioritize a partial
-    // players-only custom order over a reclaimed seat.
     activePlayers.forEach(player => {
         const peerId = String(player?.peerId || '');
         if (!peerId || seen.has(peerId)) return;
         seen.add(peerId);
-        completedOrder.push(peerId);
+        completed.push(peerId);
     });
 
-    state.videoOrder = completedOrder;
-    return completedOrder;
+    return completed;
+}
+
+function captureDmSeatRecord(state, dmPlayer) {
+    if (!state || !dmPlayer || !dmPlayer.isDM) return null;
+
+    const dmPeerId = String(dmPlayer.peerId || '');
+    if (!dmPeerId) return null;
+
+    const activeOrderFallback = (Array.isArray(state.players) ? state.players : [])
+        .map(player => String(player?.peerId || ''))
+        .filter(Boolean);
+    const videoOrder = Array.isArray(state.videoOrder) && state.videoOrder.length
+        ? [...state.videoOrder].map(String)
+        : activeOrderFallback;
+    const tableOrder = Array.isArray(state.tableOrder) && state.tableOrder.length
+        ? [...state.tableOrder].map(String)
+        : [...videoOrder];
+
+    const record = {
+        peerId: dmPeerId,
+        name: String(dmPlayer.name || 'Dungeon Master'),
+        videoIndex: getOrderIndex(videoOrder, dmPeerId, 0),
+        tableIndex: getOrderIndex(tableOrder, dmPeerId, 0),
+        videoOrder,
+        tableOrder,
+        initiativePeerId: state.initiativePeerId ? String(state.initiativePeerId) : null
+    };
+
+    state.lastDmSeat = record;
+    return record;
+}
+
+function restoreReclaimedDmOrderAuthority(state, oldPeerId, newPeerId, seatRecord = null) {
+    if (!state) return { videoOrder: [], tableOrder: [] };
+
+    const oldKey = String(oldPeerId || '');
+    const newKey = String(newPeerId || '');
+    const remembered = seatRecord || state.lastDmSeat || null;
+
+    const rememberedVideoOrder = remembered && Array.isArray(remembered.videoOrder)
+        ? remembered.videoOrder
+        : [];
+    const rememberedTableOrder = remembered && Array.isArray(remembered.tableOrder)
+        ? remembered.tableOrder
+        : rememberedVideoOrder;
+
+    const currentVideoHasOldSeat = Array.isArray(state.videoOrder) && state.videoOrder.map(String).includes(oldKey);
+    const currentTableHasOldSeat = Array.isArray(state.tableOrder) && state.tableOrder.map(String).includes(oldKey);
+
+    const videoSource = currentVideoHasOldSeat ? state.videoOrder : rememberedVideoOrder;
+    const tableSource = currentTableHasOldSeat ? state.tableOrder : rememberedTableOrder;
+
+    const migratedVideoSource = oldKey && oldKey !== newKey
+        ? replacePeerIdInOrderedList(videoSource, oldKey, newKey)
+        : [...(Array.isArray(videoSource) ? videoSource : [])];
+    const migratedTableSource = oldKey && oldKey !== newKey
+        ? replacePeerIdInOrderedList(tableSource, oldKey, newKey)
+        : [...(Array.isArray(tableSource) ? tableSource : [])];
+
+    const videoIndex = remembered ? Number(remembered.videoIndex) || 0 : 0;
+    const tableIndex = remembered ? Number(remembered.tableIndex) || 0 : videoIndex;
+
+    state.videoOrder = completeActiveOrder(state, migratedVideoSource, newKey, videoIndex);
+    state.tableOrder = completeActiveOrder(state, migratedTableSource, newKey, tableIndex);
+
+    const rememberedInitiativePeerId = remembered ? String(remembered.initiativePeerId || '') : '';
+    if ((!state.initiativePeerId || String(state.initiativePeerId) === oldKey) && rememberedInitiativePeerId === oldKey) {
+        state.initiativePeerId = newKey;
+    } else if (String(state.initiativePeerId || '') === oldKey) {
+        state.initiativePeerId = newKey;
+    }
+
+    const joinedDm = Array.isArray(state.players)
+        ? state.players.find(player => player.isDM && String(player.peerId) === newKey)
+        : null;
+    if (joinedDm) captureDmSeatRecord(state, joinedDm);
+
+    return {
+        videoOrder: [...state.videoOrder],
+        tableOrder: [...state.tableOrder]
+    };
 }
 
 io.on('connection', (socket) => {
@@ -375,7 +473,9 @@ io.on('connection', (socket) => {
                 notes: [],
                 sketches: [],
                 initiativePeerId: null,
-                videoOrder: []
+                videoOrder: [],
+                tableOrder: [],
+                lastDmSeat: null
             };
             incrementCommunityStat('tablesSinceLaunch');
         }
@@ -398,10 +498,21 @@ io.on('connection', (socket) => {
 
             const samePeerPlayers = state.players.filter(player => String(player.peerId) === peerId);
             const existingPeerPlayer = samePeerPlayers.find(player => player.isDM === true) || samePeerPlayers[0] || null;
-            const preservedSeat = existingPeerPlayer || displacedDM;
+            const rememberedDmSeat = (
+                !existingPeerPlayer &&
+                !displacedDM &&
+                isDM &&
+                roomAlreadyExisted &&
+                state.lastDmSeat
+            ) ? state.lastDmSeat : null;
+            const preservedSeat = existingPeerPlayer || displacedDM || rememberedDmSeat;
             const effectiveIsDM = existingPeerPlayer
                 ? Boolean(existingPeerPlayer.isDM)
-                : (displacedDM ? true : isDM);
+                : ((displacedDM || rememberedDmSeat) ? true : isDM);
+            const reclaimedOldPeerId = displacedPeerId || (rememberedDmSeat ? String(rememberedDmSeat.peerId || '') : '');
+            const dmSeatRecord = displacedDM
+                ? captureDmSeatRecord(state, displacedDM)
+                : rememberedDmSeat;
 
             if (displacedDM) {
                 replacePeerIdInRoomState(state, displacedDM.peerId, peerId);
@@ -415,7 +526,7 @@ io.on('connection', (socket) => {
                 state.players = state.players.filter(player => player.socketId !== displacedDM.socketId);
             }
 
-            const isSeatReclaim = Boolean(displacedDM) || samePeerPlayers.some(player => player.socketId !== socket.id);
+            const isSeatReclaim = Boolean(displacedDM || rememberedDmSeat) || samePeerPlayers.some(player => player.socketId !== socket.id);
 
             samePeerPlayers.forEach((stalePlayer) => {
                 if (stalePlayer.socketId === socket.id) return;
@@ -435,19 +546,33 @@ io.on('connection', (socket) => {
             // A zombie-DM takeover creates a new browser/media lifecycle. Never
             // advertise the displaced browser's stale media flags on the reclaimed
             // seat; the returning DM intentionally joins muted with camera off.
-            const resetDisplacedMediaState = Boolean(displacedDM);
+            const resetReclaimedMediaState = Boolean(displacedDM || rememberedDmSeat);
             const joinedPlayer = {
                 socketId: socket.id,
                 peerId,
                 name: preservedSeat ? preservedSeat.name : playerName,
                 isDM: effectiveIsDM,
-                micEnabled: resetDisplacedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.micEnabled) : false),
-                camEnabled: resetDisplacedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.camEnabled) : false)
+                micEnabled: resetReclaimedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.micEnabled) : false),
+                camEnabled: resetReclaimedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.camEnabled) : false)
             };
             state.players.push(joinedPlayer);
 
-            if (displacedDM) {
-                completeVideoOrderAfterSeatReclaim(state, joinedPlayer.peerId, joinedPlayer.isDM);
+            if (joinedPlayer.isDM && (displacedDM || rememberedDmSeat)) {
+                restoreReclaimedDmOrderAuthority(
+                    state,
+                    reclaimedOldPeerId,
+                    joinedPlayer.peerId,
+                    dmSeatRecord
+                );
+            } else if (joinedPlayer.isDM) {
+                state.videoOrder = completeActiveOrder(state, state.videoOrder, joinedPlayer.peerId, 0);
+                state.tableOrder = completeActiveOrder(
+                    state,
+                    state.tableOrder && state.tableOrder.length ? state.tableOrder : state.videoOrder,
+                    joinedPlayer.peerId,
+                    0
+                );
+                captureDmSeatRecord(state, joinedPlayer);
             }
 
             if (!preservedSeat) incrementCommunityStat('playersSinceLaunch');
@@ -471,18 +596,18 @@ io.on('connection', (socket) => {
             socket.emit('syncInitiativeSpotlight', state.initiativePeerId || null);
             socket.emit('syncVideoOrder', state.videoOrder || []);
 
-            if (displacedDM && displacedPeerId && displacedPeerId !== peerId) {
+            if (isSeatReclaim && reclaimedOldPeerId && reclaimedOldPeerId !== peerId) {
                 io.to(currentRoom).emit('peerIdentityReplaced', {
-                    oldPeerId: displacedPeerId,
+                    oldPeerId: reclaimedOldPeerId,
                     newPeerId: peerId,
                     videoOrder: [...(state.videoOrder || [])],
-                    reason: 'zombie-seat-reclaim'
+                    reason: displacedDM ? 'zombie-seat-reclaim' : 'disconnected-dm-seat-reclaim'
                 });
             }
 
             io.to(currentRoom).emit('updatePlayerList', state.players);
             io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
-            if (displacedDM && state.initiativePeerId) {
+            if (isSeatReclaim && state.initiativePeerId) {
                 io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
             }
 
@@ -497,7 +622,7 @@ io.on('connection', (socket) => {
                 roomName: requestedRoom,
                 peerId: joinedPlayer.peerId,
                 socketId: socket.id,
-                reclaimed: Boolean(preservedSeat),
+                reclaimed: isSeatReclaim,
                 isDM: joinedPlayer.isDM
             });
         };
@@ -593,6 +718,7 @@ io.on('connection', (socket) => {
         }
 
         replacePeerIdInRoomState(state, oldPeerId, newPeerId);
+        if (participant.isDM) captureDmSeatRecord(state, participant);
 
         // This event must precede updatePlayerList so clients can rename the
         // existing seat in place instead of removing and appending a new box.
@@ -873,7 +999,20 @@ io.on('connection', (socket) => {
         const player = state.players.find(p => p.socketId === socket.id);
         if (!player || !player.isDM) return;
 
-        state.initiativePeerId = peerId ? String(peerId) : null;
+        const nextInitiativePeerId = peerId ? String(peerId) : null;
+        if (!state.initiativePeerId && nextInitiativePeerId) {
+            const dmPlayer = state.players.find(activePlayer => activePlayer.isDM);
+            const dmPeerId = dmPlayer ? String(dmPlayer.peerId) : '';
+            state.tableOrder = completeActiveOrder(
+                state,
+                state.videoOrder,
+                dmPeerId,
+                getOrderIndex(state.videoOrder, dmPeerId, 0)
+            );
+            if (dmPlayer) captureDmSeatRecord(state, dmPlayer);
+        }
+
+        state.initiativePeerId = nextInitiativePeerId;
 
         io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
     });
@@ -898,7 +1037,10 @@ io.on('connection', (socket) => {
 
         const activePeerIds = new Set(state.players.map(p => String(p.peerId)));
         const seen = new Set();
-        const restoredOrder = peerOrder
+        const authoritativeTableOrder = Array.isArray(state.tableOrder) && state.tableOrder.length
+            ? state.tableOrder
+            : peerOrder;
+        const restoredOrder = authoritativeTableOrder
             .map(peerId => String(peerId))
             .filter(peerId => {
                 if (!activePeerIds.has(peerId) || seen.has(peerId)) return false;
@@ -918,6 +1060,9 @@ io.on('connection', (socket) => {
 
         state.initiativePeerId = null;
         state.videoOrder = restoredOrder;
+        state.tableOrder = [...restoredOrder];
+        const activeDm = state.players.find(activePlayer => activePlayer.isDM);
+        if (activeDm) captureDmSeatRecord(state, activeDm);
 
         // Broadcast the restored order and cleared spotlight from one authoritative
         // transaction so a stale combat-order event cannot win the first end-combat.
@@ -945,6 +1090,12 @@ io.on('connection', (socket) => {
             .map(peerId => String(peerId))
             .filter(peerId => activePeerIds.has(peerId));
 
+        if (!state.initiativePeerId) {
+            state.tableOrder = [...state.videoOrder];
+        }
+        const activeDm = state.players.find(activePlayer => activePlayer.isDM);
+        if (activeDm) captureDmSeatRecord(state, activeDm);
+
         io.to(currentRoom).emit('syncVideoOrder', state.videoOrder);
     });
 
@@ -954,10 +1105,17 @@ io.on('connection', (socket) => {
         if (currentRoom && roomCampaignStates[currentRoom]) {
             const state = roomCampaignStates[currentRoom];
             const departingPlayer = state.players.find(p => p.socketId === socket.id);
+            if (departingPlayer && departingPlayer.isDM) {
+                captureDmSeatRecord(state, departingPlayer);
+            }
+
             state.players = state.players.filter(p => p.socketId !== socket.id);
 
             const remainingPeerIds = new Set(state.players.map(p => String(p.peerId)));
             state.videoOrder = (state.videoOrder || []).filter(peerId => remainingPeerIds.has(String(peerId)));
+            if (!departingPlayer || !departingPlayer.isDM) {
+                state.tableOrder = (state.tableOrder || []).filter(peerId => remainingPeerIds.has(String(peerId)));
+            }
 
             if (departingPlayer && state.initiativePeerId === String(departingPlayer.peerId)) {
                 state.initiativePeerId = null;
