@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.1 — 09-persistence.js
+// Dungeons '85 Public Beta 9.7.3.4.10.1 — 09-persistence.js
 // Ordered client module. Preserve script load order in index.html.
 
 function sanitizeFilenamePart(value) {
@@ -154,9 +154,26 @@ function exportTableState() {
     markTableSaved();
 }
 
-async function importD85Module(file) {
+let d85ImportInProgress = false;
+
+async function importD85Module(file, inputElement = null) {
+    // Capture the File object, then clear the browser input immediately. Browsers
+    // otherwise suppress a second change event when the same physical file is
+    // selected again during the same table session.
+    if (inputElement) inputElement.value = '';
     if (!file) return;
 
+    if (!tableState.isDM || !socketSeatConfirmed) {
+        alert('The Dungeon Master seat must be confirmed before importing a .d85 file.');
+        return;
+    }
+
+    if (d85ImportInProgress) {
+        alert('A .d85 file is already loading.');
+        return;
+    }
+
+    d85ImportInProgress = true;
     showDungeonLoading();
 
     const reader = new FileReader();
@@ -200,11 +217,29 @@ async function importD85Module(file) {
             console.error("D85 Import Error:", err);
             alert("Invalid .d85 file.");
         } finally {
+            d85ImportInProgress = false;
+            if (inputElement) inputElement.value = '';
             hideLoading();
         }
     };
 
-    reader.readAsArrayBuffer(file);
+    reader.onerror = () => {
+        d85ImportInProgress = false;
+        if (inputElement) inputElement.value = '';
+        hideLoading();
+        console.error('D85 Import Error: unable to read the selected file.');
+        alert('Invalid .d85 file.');
+    };
+
+    try {
+        reader.readAsArrayBuffer(file);
+    } catch (err) {
+        d85ImportInProgress = false;
+        if (inputElement) inputElement.value = '';
+        hideLoading();
+        console.error('D85 Import Error:', err);
+        alert('Invalid .d85 file.');
+    }
 }
 
 draw();

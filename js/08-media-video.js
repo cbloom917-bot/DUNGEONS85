@@ -1,9 +1,13 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.5 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.10.1 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Media, video ribbon, and initiative order
 // ============================================================
+
+let pendingTableOrderRestore = null;
+let pendingTableOrderRestoreTimer = null;
+
 
 function getLocalVideoContainer() {
     return document.getElementById('local-video-container');
@@ -910,32 +914,114 @@ function getCurrentVideoOrder() {
     return Array
         .from(document.querySelectorAll('.video-box'))
         .filter(box => box.dataset.peerId)
-        .map(box => box.dataset.peerId);
+        .map(box => String(box.dataset.peerId));
+}
+
+function normalizeVideoOrder(peerOrder) {
+    const activePeerIds = new Set(
+        (Array.isArray(currentActiveRoomArray) ? currentActiveRoomArray : [])
+            .map(player => String(player?.peerId || ''))
+            .filter(Boolean)
+    );
+    if (localPeerId) activePeerIds.add(String(localPeerId));
+
+    const seen = new Set();
+    const normalized = [];
+    const candidates = [
+        ...(Array.isArray(peerOrder) ? peerOrder : []),
+        ...(Array.isArray(customVideoOrder) ? customVideoOrder : []),
+        ...getCurrentVideoOrder(),
+        ...(Array.isArray(currentActiveRoomArray)
+            ? currentActiveRoomArray.map(player => player?.peerId)
+            : [])
+    ];
+
+    candidates.forEach(peerId => {
+        const key = String(peerId || '');
+        if (!key || seen.has(key)) return;
+        if (activePeerIds.size && !activePeerIds.has(key)) return;
+        seen.add(key);
+        normalized.push(key);
+    });
+
+    return normalized;
+}
+
+function sameVideoOrder(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((peerId, index) => String(peerId) === String(b[index]));
+}
+
+function clearPendingTableOrderRestore() {
+    if (pendingTableOrderRestoreTimer) clearTimeout(pendingTableOrderRestoreTimer);
+    pendingTableOrderRestoreTimer = null;
+    pendingTableOrderRestore = null;
+}
+
+function beginPendingTableOrderRestore(restoredOrder) {
+    clearPendingTableOrderRestore();
+    pendingTableOrderRestore = [...restoredOrder];
+    pendingTableOrderRestoreTimer = setTimeout(() => {
+        // The local order is already restored. This guard only suppresses a stale
+        // combat-order echo while the atomic server transaction completes.
+        clearPendingTableOrderRestore();
+    }, 3000);
+}
+
+function applySyncedVideoOrder(peerOrder) {
+    const normalizedOrder = normalizeVideoOrder(peerOrder);
+
+    if (pendingTableOrderRestore) {
+        if (!sameVideoOrder(normalizedOrder, pendingTableOrderRestore)) {
+            debugWarn('DEBUG: Ignoring stale video order while table-order restoration is pending.');
+            return;
+        }
+        clearPendingTableOrderRestore();
+    }
+
+    applyVideoOrder(normalizedOrder);
 }
 
 function captureTableOrderForCombat() {
-    if (!tableOrder.length) {
-        tableOrder = getCurrentVideoOrder();
-    }
+    // This function is called only when initiative is currently inactive. Capture
+    // a complete fresh snapshot every time combat starts; never reuse a partial or
+    // stale snapshot left by an interrupted earlier initiative cycle.
+    tableOrder = normalizeVideoOrder(getCurrentVideoOrder());
 }
 
 function clearInitiativeAndRestoreTableOrder() {
+    const restoredOrder = normalizeVideoOrder(tableOrder);
+    tableOrder = [];
     setInitiativeSpotlight(null);
 
-    if (socket) {
-        socket.emit('setInitiativeSpotlight', null);
+    if (!restoredOrder.length) {
+        if (socket) socket.emit('setInitiativeSpotlight', null);
+        return;
     }
 
-    if (tableOrder.length) {
-        const restoredOrder = [...tableOrder];
-        tableOrder = [];
-        customVideoOrder = restoredOrder;
-        applyVideoOrder(restoredOrder);
+    customVideoOrder = [...restoredOrder];
+    beginPendingTableOrderRestore(restoredOrder);
+    applyVideoOrder(restoredOrder);
 
-        if (socket) {
+    if (!socket) {
+        clearPendingTableOrderRestore();
+        return;
+    }
+
+    socket.emit('endInitiativeAndRestoreOrder', restoredOrder, (result) => {
+        if (!result || result.ok !== true) {
+            debugWarn('DEBUG: Atomic table-order restoration was rejected; using legacy fallback.');
+            clearPendingTableOrderRestore();
+            socket.emit('setInitiativeSpotlight', null);
             socket.emit('setVideoOrder', restoredOrder);
+            return;
         }
-    }
+
+        const confirmedOrder = normalizeVideoOrder(result.peerOrder || restoredOrder);
+        clearPendingTableOrderRestore();
+        customVideoOrder = [...confirmedOrder];
+        applyVideoOrder(confirmedOrder);
+    });
 }
 
 function setInitiativeSpotlight(peerId) {

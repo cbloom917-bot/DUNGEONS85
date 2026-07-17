@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.10 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.10.1 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -276,6 +276,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     let latestPlayerListHasLocalSeat = false;
     let reconnectRecoveryPending = false;
     let currentSocketConnectIsReconnect = false;
+    let tableInterfaceAdmissionConfirmed = false;
 
     clearPeerMediaRecoveryTimers();
     clearPeerHardRecoveryTimer();
@@ -479,6 +480,28 @@ function initHybridMediaVttStack(roomName, playerName) {
             joinAckTimer = null;
         };
 
+        const setAdmissionUiState = (state, message = '') => {
+            const joinButton = document.getElementById('join-btn');
+            const roomNote = document.getElementById('gm-room-note');
+
+            if (joinButton) {
+                if (state === 'pending') {
+                    joinButton.disabled = true;
+                    joinButton.innerText = tableState.isDM ? 'CHECKING TABLE...' : 'JOINING TABLE...';
+                } else {
+                    joinButton.disabled = false;
+                    joinButton.innerText = 'CREATE/JOIN TABLE';
+                }
+            }
+
+            if (!tableState.isDM || !roomNote) return;
+
+            if (message) {
+                roomNote.innerText = message;
+                roomNote.classList.remove('hidden');
+            }
+        };
+
         const updateConnectedInterfaceSafely = () => {
             try {
                 const localVideoBox = document.getElementById('local-video-container');
@@ -541,6 +564,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 const retryDelay = retryDelays[dmSeatConflictRetryCount];
                 dmSeatConflictRetryCount += 1;
                 clearDmSeatConflictRetry();
+                setAdmissionUiState('pending', 'Checking whether this table still has an active Dungeon Master...');
                 debugWarn(`DEBUG: DM seat conflict; retrying join in ${retryDelay} ms.`);
                 dmSeatConflictRetryTimer = setTimeout(() => {
                     dmSeatConflictRetryTimer = null;
@@ -549,7 +573,9 @@ function initHybridMediaVttStack(roomName, playerName) {
                 return;
             }
 
-            alert(typeof message === 'string' ? message : 'Unable to join this table.');
+            const userMessage = typeof message === 'string' ? message : 'Unable to join this table.';
+            setAdmissionUiState('failed', userMessage);
+            alert(userMessage);
 
             if (errorCode === 'DM_SEAT_CONFLICT') return;
             window.location.reload();
@@ -564,6 +590,12 @@ function initHybridMediaVttStack(roomName, playerName) {
                 `DEBUG: Socket.IO table seat confirmed for ${result?.peerId || localPeerId} on socket ${result?.socketId || socket.id}${result?.reclaimed ? ' (reclaimed)' : ''}.`
             );
 
+            if (!tableInterfaceAdmissionConfirmed) {
+                tableInterfaceAdmissionConfirmed = true;
+                setAdmissionUiState('confirmed');
+                updateConnectedInterfaceSafely();
+            }
+
             if (isReconnect) {
                 reconnectRecoveryPending = true;
                 resumeReconnectRecoveryAfterSeatConfirmation();
@@ -577,6 +609,15 @@ function initHybridMediaVttStack(roomName, playerName) {
             joinAckPending = true;
             deferredJoinError = null;
             clearJoinAckTimer();
+
+            if (!tableInterfaceAdmissionConfirmed) {
+                setAdmissionUiState(
+                    'pending',
+                    tableState.isDM
+                        ? 'Checking whether this table is available...'
+                        : 'Joining table...'
+                );
+            }
 
             socket.emit('joinRoom', {
                 roomName,
@@ -664,9 +705,9 @@ function initHybridMediaVttStack(roomName, playerName) {
             debugLog("DEBUG: Socket connected", socket.id);
             activeRoomName = roomName;
 
-            // Authoritative room admission always runs before optional DOM work.
+            // Do not expose the table interface until the server confirms that
+            // this socket owns an authoritative participant seat.
             emitJoinRoom({ isReconnect: isSocketReconnect });
-            updateConnectedInterfaceSafely();
 
             // The server now owns join/rejoin notifications.
             // Do not send a client-side "created table" message here, because
@@ -980,7 +1021,7 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('syncVideoOrder', (peerOrder) => {
-            applyVideoOrder(peerOrder);
+            applySyncedVideoOrder(peerOrder);
         });
     });
 }
