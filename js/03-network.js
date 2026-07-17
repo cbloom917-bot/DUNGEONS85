@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.4 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.9.5 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -368,7 +368,13 @@ function initHybridMediaVttStack(roomName, playerName) {
         peerIdentityMigrationInProgress = true;
         clearPeerMediaRecoveryTimers();
         clearPeerHardRecoveryTimer();
-        closeAllPeerConnections({ preserveVideoDuringRefresh: true });
+
+        // A suspended browser can report its old tracks as live even though they
+        // no longer send usable media. Preserve the table seat and authority, but
+        // deliberately return media to the same OFF state used for a normal join.
+        // This publishes mic/camera false on the existing socket before the server
+        // atomically migrates the seat to the fresh PeerJS identity.
+        resetLocalMediaAfterIdentityRecovery();
 
         const stalePeer = peer;
         const replacementPeer = new Peer(undefined, webrtcIceConfig);

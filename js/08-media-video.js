@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.4 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.9.5 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -137,6 +137,58 @@ function stopLocalMediaStream() {
         localVideo.pause();
         localVideo.srcObject = null;
     }
+}
+
+
+function resetLocalMediaAfterIdentityRecovery() {
+    // Browser media tracks that survive laptop suspension can remain locally
+    // "live" while no longer producing usable media for replacement WebRTC calls.
+    // Treat a fresh PeerJS identity as a clean table re-entry: preserve the seat
+    // and table state, but deliberately return mic/camera to their safe OFF state.
+    closeAllPeerConnections({ preserveVideoDuringRefresh: true });
+
+    if (localStream && typeof localStream.getTracks === 'function') {
+        localStream.getTracks().forEach(track => {
+            try {
+                track.stop();
+            } catch (err) {
+                debugWarn("DEBUG: Failed to stop suspended local media track during identity recovery:", err);
+            }
+        });
+    }
+
+    localStream = new MediaStream();
+
+    const localVideo = document.getElementById('local-video');
+    if (localVideo) {
+        // Reassign an empty stream without explicitly pausing the autoplay video.
+        // The existing mic/camera toggle paths can then add fresh tracks normally.
+        localVideo.srcObject = localStream;
+    }
+
+    const micBtn = document.getElementById('toggle-mic-btn');
+    if (micBtn) {
+        micBtn.innerText = "Unmute";
+        micBtn.classList.add('muted-state');
+    }
+
+    const camBtn = document.getElementById('toggle-cam-btn');
+    if (camBtn) {
+        camBtn.innerText = "Cam On";
+        camBtn.classList.add('muted-state');
+    }
+
+    const localBox = getLocalVideoContainer();
+    if (localBox) {
+        localBox.dataset.micEnabled = 'false';
+        localBox.dataset.camEnabled = 'false';
+    }
+
+    showLocalMediaStatus("mic", "MIC OFF");
+    showLocalMediaStatus("cam", "CAMERA OFF");
+    publishLocalMediaState();
+
+    debugWarn("DEBUG: Local microphone and camera reset OFF after PeerJS identity recovery.");
 }
 
 const PEER_CALL_STARTUP_TIMEOUT_MS = 3500;
