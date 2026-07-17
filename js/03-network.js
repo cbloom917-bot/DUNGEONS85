@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.5 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.10 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -13,6 +13,8 @@ let peerHardRecoveryAttempted = false;
 let peerIdentityMigrationInProgress = false;
 let peerCallStartupFailures = new Map();
 let beginFreshPeerIdentityMigration = null;
+let socketSeatConfirmed = false;
+let pendingPeerHardRecoveryReason = null;
 
 const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
 const PEER_HARD_RECOVERY_DELAY_MS = 14000;
@@ -53,12 +55,14 @@ function resetPeerHardRecoveryCycle() {
     peerCallStartupFailures.clear();
     peerHardRecoveryEligible = false;
     peerHardRecoveryAttempted = false;
+    pendingPeerHardRecoveryReason = null;
 }
 
 function armPeerHardRecoveryCycle(source) {
     peerHardRecoveryEligible = true;
     peerHardRecoveryAttempted = false;
     peerCallStartupFailures.clear();
+    pendingPeerHardRecoveryReason = null;
     debugWarn(`DEBUG: PeerJS hard recovery armed after ${source}.`);
 }
 
@@ -87,6 +91,13 @@ function triggerPeerHardRecovery(reason) {
         return;
     }
 
+    if (!socketSeatConfirmed) {
+        pendingPeerHardRecoveryReason = reason;
+        debugWarn(`DEBUG: PeerJS identity recovery deferred until the Socket.IO table seat is confirmed after ${reason}.`);
+        return;
+    }
+
+    pendingPeerHardRecoveryReason = null;
     peerHardRecoveryAttempted = true;
     debugWarn(
         `DEBUG: PeerJS reports locally healthy but ${missingPlayers.length} media peer(s) remain unreachable after ${reason}; migrating to a fresh PeerJS identity.`
@@ -258,6 +269,13 @@ function initHybridMediaVttStack(roomName, playerName) {
     let dmSeatConflictRetryTimer = null;
     let dmSeatConflictRetryCount = 0;
     let pendingPeerIdentityMigration = null;
+    let joinAckPending = false;
+    let joinAckTimer = null;
+    let deferredJoinError = null;
+    let joinAttemptCounter = 0;
+    let latestPlayerListHasLocalSeat = false;
+    let reconnectRecoveryPending = false;
+    let currentSocketConnectIsReconnect = false;
 
     clearPeerMediaRecoveryTimers();
     clearPeerHardRecoveryTimer();
@@ -266,6 +284,8 @@ function initHybridMediaVttStack(roomName, playerName) {
     peerIdentityMigrationInProgress = false;
     peerCallStartupFailures.clear();
     beginFreshPeerIdentityMigration = null;
+    socketSeatConfirmed = false;
+    pendingPeerHardRecoveryReason = null;
     installNetworkRecoveryHooksOnce();
 
     if (socket) {
@@ -358,6 +378,11 @@ function initHybridMediaVttStack(roomName, playerName) {
     beginFreshPeerIdentityMigration = (reason) => {
         if (peerIdentityMigrationInProgress || pendingPeerIdentityMigration) return;
         if (!socket || !socket.connected) return;
+        if (!socketSeatConfirmed) {
+            pendingPeerHardRecoveryReason = reason;
+            debugWarn(`DEBUG: Fresh PeerJS identity migration deferred until the Socket.IO table seat is confirmed after ${reason}.`);
+            return;
+        }
 
         const oldPeerId = String(localPeerId || peer?.id || '');
         if (!oldPeerId) {
@@ -449,18 +474,157 @@ function initHybridMediaVttStack(roomName, playerName) {
             dmSeatConflictRetryTimer = null;
         };
 
-        const emitJoinRoom = () => {
+        const clearJoinAckTimer = () => {
+            if (joinAckTimer) clearTimeout(joinAckTimer);
+            joinAckTimer = null;
+        };
+
+        const updateConnectedInterfaceSafely = () => {
+            try {
+                const localVideoBox = document.getElementById('local-video-container');
+                if (localVideoBox) {
+                    localVideoBox.dataset.peerId = localPeerId || "local";
+                    localVideoBox.dataset.name = tableState.playerName || "You";
+                    localVideoBox.dataset.isDm = tableState.isDM ? "true" : "false";
+                    setupVideoBoxInitiative(localVideoBox);
+                }
+
+                const roomDisplay = document.getElementById('room-display');
+                if (roomDisplay) roomDisplay.innerText = roomName;
+                document.getElementById('top-nav')?.classList.add('hidden');
+                document.getElementById('login-screen')?.classList.add('hidden');
+                document.getElementById('vtt-interface')?.classList.remove('hidden');
+                sortVideoRibbon();
+
+                document.getElementById('ticker-empty-msg')?.remove();
+
+                if (!tableState.isDM) {
+                    document.getElementById('toolbar-right')?.remove();
+                }
+
+                setTimeout(() => {
+                    try {
+                        resizeCanvas();
+                        makeElementsDraggable();
+                    } catch (err) {
+                        debugWarn("DEBUG: Deferred reconnect UI update failed:", err);
+                    }
+                }, 50);
+            } catch (err) {
+                // Presentation failures must never interrupt authoritative room admission.
+                debugWarn("DEBUG: Reconnect UI update failed; table seat recovery continues:", err);
+            }
+        };
+
+        const resumeReconnectRecoveryAfterSeatConfirmation = () => {
+            if (!socketSeatConfirmed || !latestPlayerListHasLocalSeat || !reconnectRecoveryPending) return;
+
+            reconnectRecoveryPending = false;
+            schedulePeerMediaRecovery('socket-reconnect');
+
+            if (pendingPeerHardRecoveryReason) {
+                const deferredReason = pendingPeerHardRecoveryReason;
+                pendingPeerHardRecoveryReason = null;
+                setTimeout(() => triggerPeerHardRecovery(deferredReason), 0);
+            }
+        };
+
+        let emitJoinRoom = null;
+
+        const handleJoinFailure = (error, isReconnect) => {
+            socketSeatConfirmed = false;
+            const errorCode = error && typeof error === 'object' ? error.code : null;
+            const message = error && typeof error === 'object' ? error.message : error;
+
+            if (errorCode === 'DM_SEAT_CONFLICT' && tableState.isDM && dmSeatConflictRetryCount < 2) {
+                const retryDelays = [5000, 15000];
+                const retryDelay = retryDelays[dmSeatConflictRetryCount];
+                dmSeatConflictRetryCount += 1;
+                clearDmSeatConflictRetry();
+                debugWarn(`DEBUG: DM seat conflict; retrying join in ${retryDelay} ms.`);
+                dmSeatConflictRetryTimer = setTimeout(() => {
+                    dmSeatConflictRetryTimer = null;
+                    emitJoinRoom({ isReconnect: true });
+                }, retryDelay);
+                return;
+            }
+
+            alert(typeof message === 'string' ? message : 'Unable to join this table.');
+
+            if (errorCode === 'DM_SEAT_CONFLICT') return;
+            window.location.reload();
+        };
+
+        const handleJoinSuccess = (result, isReconnect) => {
+            socketSeatConfirmed = true;
+            dmSeatConflictRetryCount = 0;
+            clearDmSeatConflictRetry();
+
+            debugWarn(
+                `DEBUG: Socket.IO table seat confirmed for ${result?.peerId || localPeerId} on socket ${result?.socketId || socket.id}${result?.reclaimed ? ' (reclaimed)' : ''}.`
+            );
+
+            if (isReconnect) {
+                reconnectRecoveryPending = true;
+                resumeReconnectRecoveryAfterSeatConfirmation();
+            }
+        };
+
+        emitJoinRoom = ({ isReconnect = currentSocketConnectIsReconnect } = {}) => {
             if (!socket || !socket.connected) return;
+
+            const attemptId = ++joinAttemptCounter;
+            joinAckPending = true;
+            deferredJoinError = null;
+            clearJoinAckTimer();
+
             socket.emit('joinRoom', {
                 roomName,
                 playerName,
                 isDM: tableState.isDM,
                 peerId: localPeerId
+            }, (result) => {
+                if (attemptId !== joinAttemptCounter) return;
+
+                joinAckPending = false;
+                clearJoinAckTimer();
+
+                if (result && result.ok === true) {
+                    handleJoinSuccess(result, isReconnect);
+                    return;
+                }
+
+                handleJoinFailure(result || deferredJoinError || {
+                    code: 'JOIN_NOT_CONFIRMED',
+                    message: 'The table server did not confirm your seat.'
+                }, isReconnect);
             });
+
+            joinAckTimer = setTimeout(() => {
+                if (attemptId !== joinAttemptCounter || !joinAckPending) return;
+
+                joinAckPending = false;
+                joinAckTimer = null;
+                const pendingError = deferredJoinError;
+                deferredJoinError = null;
+
+                if (pendingError) {
+                    handleJoinFailure(pendingError, isReconnect);
+                    return;
+                }
+
+                socketSeatConfirmed = false;
+                debugError("DEBUG: Socket.IO table seat confirmation timed out; media recovery remains paused.");
+            }, 6000);
         };
 
         // Debug-only reconnect diagnostics. These stay gated by D85_DEBUG_LOGS.
         socket.on('disconnect', (reason) => {
+            socketSeatConfirmed = false;
+            latestPlayerListHasLocalSeat = false;
+            reconnectRecoveryPending = false;
+            joinAckPending = false;
+            clearJoinAckTimer();
             if (hasSocketConnectedOnce) armPeerHardRecoveryCycle('socket-disconnect');
             debugWarn("DEBUG: Socket disconnected:", reason);
         });
@@ -492,42 +656,17 @@ function initHybridMediaVttStack(roomName, playerName) {
         socket.on('connect', () => {
             const isSocketReconnect = hasSocketConnectedOnce;
             hasSocketConnectedOnce = true;
+            currentSocketConnectIsReconnect = isSocketReconnect;
+            socketSeatConfirmed = false;
+            latestPlayerListHasLocalSeat = false;
+            reconnectRecoveryPending = isSocketReconnect;
 
             debugLog("DEBUG: Socket connected", socket.id);
             activeRoomName = roomName;
 
-            const localVideoBox = document.getElementById('local-video-container');
-            if (localVideoBox) {
-                localVideoBox.dataset.peerId = localPeerId || "local";
-                localVideoBox.dataset.name = tableState.playerName || "You";
-                localVideoBox.dataset.isDm = tableState.isDM ? "true" : "false";
-                setupVideoBoxInitiative(localVideoBox);
-            }
-
-            document.getElementById('room-display').innerText = roomName;
-            document.getElementById('top-nav').classList.add('hidden');
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('vtt-interface').classList.remove('hidden');
-            sortVideoRibbon();
-
-            const emptyMsg = document.getElementById('ticker-empty-msg');
-            if (emptyMsg) emptyMsg.remove();
-
-            if (!tableState.isDM) {
-                const dmToolbar = document.getElementById('toolbar-right');
-                if (dmToolbar) dmToolbar.remove();
-            }
-
-            setTimeout(() => {
-                resizeCanvas();
-                makeElementsDraggable();
-            }, 50);
-
-            emitJoinRoom();
-
-            if (isSocketReconnect) {
-                schedulePeerMediaRecovery('socket-reconnect');
-            }
+            // Authoritative room admission always runs before optional DOM work.
+            emitJoinRoom({ isReconnect: isSocketReconnect });
+            updateConnectedInterfaceSafely();
 
             // The server now owns join/rejoin notifications.
             // Do not send a client-side "created table" message here, because
@@ -535,26 +674,12 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('joinError', (error) => {
-            const errorCode = error && typeof error === 'object' ? error.code : null;
-            const message = error && typeof error === 'object' ? error.message : error;
-
-            if (errorCode === 'DM_SEAT_CONFLICT' && tableState.isDM && dmSeatConflictRetryCount < 2) {
-                const retryDelays = [5000, 15000];
-                const retryDelay = retryDelays[dmSeatConflictRetryCount];
-                dmSeatConflictRetryCount += 1;
-                clearDmSeatConflictRetry();
-                debugWarn(`DEBUG: DM seat conflict; retrying join in ${retryDelay} ms.`);
-                dmSeatConflictRetryTimer = setTimeout(() => {
-                    dmSeatConflictRetryTimer = null;
-                    emitJoinRoom();
-                }, retryDelay);
+            if (joinAckPending) {
+                deferredJoinError = error;
                 return;
             }
 
-            alert(typeof message === 'string' ? message : 'Unable to join this table.');
-
-            if (errorCode === 'DM_SEAT_CONFLICT') return;
-            window.location.reload();
+            handleJoinFailure(error, currentSocketConnectIsReconnect);
         });
 
         socket.on('seatProbe', (acknowledge) => {
@@ -582,7 +707,11 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             const previousPlayers = currentActiveRoomArray || [];
 
-            if (playersArray.some(player => String(player.peerId) === String(localPeerId))) {
+            latestPlayerListHasLocalSeat = playersArray.some(
+                player => String(player.peerId) === String(localPeerId)
+            );
+
+            if (latestPlayerListHasLocalSeat) {
                 dmSeatConflictRetryCount = 0;
                 clearDmSeatConflictRetry();
             }
@@ -615,6 +744,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             currentActiveRoomArray = sortPlayersForRibbon(playersArray);
+            resumeReconnectRecoveryAfterSeatConfirmation();
 
             // A returning participant can rejoin Socket.IO before its PeerJS
             // identity is reachable through the signaling broker. The immediate
