@@ -271,6 +271,49 @@ function replacePeerIdInRoomState(state, oldPeerId, newPeerId) {
     }
 }
 
+function completeVideoOrderAfterSeatReclaim(state, reclaimedPeerId, isDM) {
+    if (!state) return [];
+
+    const reclaimedKey = String(reclaimedPeerId || '');
+    const activePlayers = Array.isArray(state.players) ? state.players : [];
+    const activePeerIds = new Set(
+        activePlayers
+            .map(player => String(player?.peerId || ''))
+            .filter(Boolean)
+    );
+
+    const seen = new Set();
+    const completedOrder = (Array.isArray(state.videoOrder) ? state.videoOrder : [])
+        .map(peerId => String(peerId || ''))
+        .filter(peerId => {
+            if (!peerId || !activePeerIds.has(peerId) || seen.has(peerId)) return false;
+            seen.add(peerId);
+            return true;
+        });
+
+    // If the old DM was missing from an incomplete custom order, do not append the
+    // reclaimed DM behind every player. Use the normal DM-first default. When the
+    // displaced identity was present, replacePeerIdInRoomState already preserved
+    // its exact custom position and this branch does nothing.
+    if (reclaimedKey && activePeerIds.has(reclaimedKey) && !seen.has(reclaimedKey)) {
+        seen.add(reclaimedKey);
+        if (isDM) completedOrder.unshift(reclaimedKey);
+        else completedOrder.push(reclaimedKey);
+    }
+
+    // Keep the server order complete so later syncs cannot prioritize a partial
+    // players-only custom order over a reclaimed seat.
+    activePlayers.forEach(player => {
+        const peerId = String(player?.peerId || '');
+        if (!peerId || seen.has(peerId)) return;
+        seen.add(peerId);
+        completedOrder.push(peerId);
+    });
+
+    state.videoOrder = completedOrder;
+    return completedOrder;
+}
+
 io.on('connection', (socket) => {
     let currentRoom = null;
 
@@ -403,6 +446,10 @@ io.on('connection', (socket) => {
             };
             state.players.push(joinedPlayer);
 
+            if (displacedDM) {
+                completeVideoOrderAfterSeatReclaim(state, joinedPlayer.peerId, joinedPlayer.isDM);
+            }
+
             if (!preservedSeat) incrementCommunityStat('playersSinceLaunch');
 
             if (state.wipeTimer) {
@@ -427,7 +474,9 @@ io.on('connection', (socket) => {
             if (displacedDM && displacedPeerId && displacedPeerId !== peerId) {
                 io.to(currentRoom).emit('peerIdentityReplaced', {
                     oldPeerId: displacedPeerId,
-                    newPeerId: peerId
+                    newPeerId: peerId,
+                    videoOrder: [...(state.videoOrder || [])],
+                    reason: 'zombie-seat-reclaim'
                 });
             }
 
@@ -547,7 +596,12 @@ io.on('connection', (socket) => {
 
         // This event must precede updatePlayerList so clients can rename the
         // existing seat in place instead of removing and appending a new box.
-        io.to(currentRoom).emit('peerIdentityReplaced', { oldPeerId, newPeerId });
+        io.to(currentRoom).emit('peerIdentityReplaced', {
+            oldPeerId,
+            newPeerId,
+            videoOrder: [...(state.videoOrder || [])],
+            reason: 'media-identity-migration'
+        });
         io.to(currentRoom).emit('updatePlayerList', state.players);
         io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
         io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId || null);
