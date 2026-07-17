@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeons '85</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+
+<link rel="stylesheet" href="css/main.css">
+
+</head>
+
+<body>
+<div id="loading-overlay"><div class="spinner"></div><div id="loading-msg">CONSTRUCTING DUNGEON...</div></div>
+
+<nav id="top-nav">
+    <a href="index.html" class="nav-link active">PLAY</a>
+    <a href="merch.html" class="nav-link">MERCH</a>
+    <a href="faq.html" class="nav-link">FAQ</a>
+    <a href="privacy.html" class="nav-link">PRIVACY</a>
+    <a href="tos.html" class="nav-link">TOS</a>
+    <a href="contact.html" class="nav-link">CONTACT</a>
+</nav>
+
+
+<div id="login-screen">
+    <div class="login-center-stack">
+        <div class="logo-container">
+            <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
+        </div>
+        <div class="login-wrap">
+            <div class="login-title" id="version-display">VERSION 9.7.3.4.10.2.1 PUBLIC BETA</div>
+            <div class="toggle-container">
+    			<button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false);">PLAYER (JOIN)</button>
+    			<button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true);">DM (HOST)</button>
+			</div>
+
+			<div id="gm-room-mode" class="toggle-container hidden">
+    			<button type="button" id="gm-create" class="toggle-btn active">CREATE NEW</button>
+    			<button type="button" id="gm-rejoin" class="toggle-btn">REJOIN LAST</button>
+			</div>
+			
+			<div id="gm-room-note" class="gm-room-note hidden">
+    		Creates a new table and replaces your saved table.
+			</div>
+			
+            <input type="text" id="char-name-input" placeholder="Character Name" class="bw-input" maxlength="20">
+            <input type="text" id="room-id-input" placeholder="Table Name" class="bw-input" maxlength="20">
+            <button id="join-btn" class="bw-btn">CREATE/JOIN TABLE</button>
+            <div id="community-counter" class="community-counter" aria-live="polite"></div>
+        </div>
+    </div>
+</div>
+
+
+<div id="vtt-interface" class="hidden">
+    <canvas id="vtt-canvas"></canvas>
+
+
+    <div id="ctx-menu">
+        <div id="ctx-token-actions">
+            <button class="ctx-item" onclick="executeContextReveal()">Reveal/Hide</button>
+            <button class="ctx-item" onclick="executeContextDuplicate()">Duplicate</button>
+            <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
+            <button class="ctx-item" onclick="executeContextResize(70)">Size: Med/Small (1x1)</button>
+            <button class="ctx-item" onclick="executeContextResize(140)">Size: Large (2x2)</button>
+            <button class="ctx-item" onclick="executeContextResize(210)">Size: Huge (3x3)</button>
+            <button class="ctx-item" onclick="executeContextResize(280)">Size: Gargantuan (4x4)</button>
+            <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
+            <button class="ctx-item danger" onclick="executeContextDelete()">Dead</button>
+        </div>
+        <div id="ctx-table-actions">
+            <button class="ctx-item" onclick="executeContextLoadMap()">Load Map</button>
+            <button class="ctx-item" onclick="executeContextSpawnToken()">Spawn Token Here</button>
+            <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
+            <button class="ctx-item danger" onclick="executeContextClearMap()">Clear Map</button>
+            <button class="ctx-item danger" onclick="executeContextClearTokens()">Clear Tokens</button>
+        </div>
+    </div>
+
+
+    <div class="toolbar" id="toolbar-left">
+        <div class="panel-label">:: Dice ::</div>
+        <div class="grid-dice">
+            <button onclick="rollDice(4)" class="tool-btn">D4</button>
+            <button onclick="rollDice(6)" class="tool-btn">D6</button>
+            <button onclick="rollDice(8)" class="tool-btn">D8</button>
+            <button onclick="rollDice(10)" class="tool-btn">D10</button>
+            <button onclick="rollDice(12)" class="tool-btn">D12</button>
+            <button onclick="rollDice(20)" class="tool-btn">D20</button>
+        </div>
+    </div>
+
+
+    <div class="toolbar" id="toolbar-right">
+        <div class="panel-label">:: Tools ::</div>
+        <div class="tool-row">
+            <button onclick="toggleTurnTracker()" class="tool-btn">Tracker</button>
+            <button onclick="toggleTorchPanel()" class="tool-btn">Timer</button>
+        </div>
+        <div class="tool-row">
+            <button onclick="toggleFogPanel()" class="tool-btn">Fog</button>
+            <button onclick="toggleNotesVisibility()" id="btn-notes-toggle" class="tool-btn">Notes</button>
+        </div>
+        <div class="tool-row">
+            <button onclick="forcePlayerFocus()" class="tool-btn">Focus</button>
+            <button type="button" class="tool-btn toolbar-empty-slot" tabindex="-1" aria-hidden="true"></button>
+        </div>
+        <div class="sketch-tool-row" aria-label="Sketch tools">
+            <button type="button" onclick="selectSketchTool('line')" id="btn-sketch-line" class="tool-btn sketch-tool-btn" title="Line">/</button>
+            <button type="button" onclick="selectSketchTool('circle')" id="btn-sketch-circle" class="tool-btn sketch-tool-btn" title="Circle">○</button>
+            <button type="button" onclick="selectSketchTool('rect')" id="btn-sketch-rect" class="tool-btn sketch-tool-btn" title="Rectangle">□</button>
+            <button type="button" onclick="selectSketchTool('eraser')" id="btn-sketch-eraser" class="tool-btn sketch-tool-btn" title="Erase Sketch">⌫</button>
+        </div>
+        <div class="tool-divider"></div>
+        <div class="tool-row import-export-row">
+            <label class="tool-btn" style="cursor: pointer;">
+                Import
+                <input id="d85-import-input" type="file" accept=".d85" style="display: none;"
+                       onclick="this.value = ''"
+                       onchange="importD85Module(this.files[0], this)">
+            </label>
+            <button onclick="exportTableState()" class="tool-btn">Export</button>
+        </div>
+        <div id="room-display">---</div>
+    </div>
+
+
+    <div class="toolbar hidden" id="fog-panel">
+        <div class="panel-label">:: Fog Of War ::</div>
+        <button onclick="toggleFogMode()" id="btn-fog-toggle" class="tool-btn">Enable Fog</button>
+        <button onclick="toggleFogDraw()" id="btn-fog-draw" class="tool-btn" style="display:none;">PLOT REVEAL</button>
+        <button onclick="resetFog()" id="btn-fog-reset" class="tool-btn" style="display:none; color: #ff3333;">Reset Fog</button>
+        <div style="border-top: 1px dashed #444; margin: 4px 0;"></div>
+            </div>
+
+
+    <div class="toolbar hidden" id="torch-panel">
+        <div class="panel-label">:: Torch ::</div>
+        <div class="torch-controls">
+            <div id="torch-light-btn" class="torch-status" onclick="igniteTorch()">LIGHT</div>
+            <div id="torch-clock">00:00</div>
+            <div id="torch-dark-status" class="torch-status active" onclick="torchSeconds = 0; extinguishTorch()">DARK</div>
+        </div>
+    </div>
+
+
+    <div class="toolbar hidden" id="turn-tracker-panel">
+        <div class="panel-label">:: Turn Tracker ::</div>
+        <div class="tracker-wrapper">
+            <div class="turn-col">
+                <div class="turn-lbl"></div>
+                <div class="turn-box" id="turn-box-1" onclick="checkTurn(1)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl">W</div>
+                <div class="turn-box" id="turn-box-2" onclick="checkTurn(2)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl"></div>
+                <div class="turn-box" id="turn-box-3" onclick="checkTurn(3)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl">W</div>
+                <div class="turn-box" id="turn-box-4" onclick="checkTurn(4)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl"></div>
+                <div class="turn-box" id="turn-box-5" onclick="checkTurn(5)"></div>
+            </div>
+            <div class="turn-col">
+                <div class="turn-lbl">WR</div>
+                <div class="turn-box" id="turn-box-6" onclick="checkTurn(6)"></div>
+                <div style="position: absolute; right: -12px; bottom: 8px; font-size: 12px; font-weight: bold;">T</div>
+            </div>
+            <button class="turn-reset-btn" onclick="resetTurns()">&#x21BA;</button> 
+        </div>
+        <div id="turn-message"></div>
+    </div>
+
+
+    <div id="note-editor" class="note-editor hidden">
+        <div class="panel-label">:: Map Note ::</div>
+        <label for="note-label-input">Label (players see this)</label>
+        <input type="text" id="note-label-input" class="note-input" maxlength="40">
+        <label for="note-body-input">GM Note</label>
+        <textarea id="note-body-input" class="note-textarea" maxlength="1000"></textarea>
+        <div class="note-editor-actions">
+            <button type="button" onclick="saveOpenNote()" class="tool-btn">Save</button>
+            <button type="button" onclick="deleteOpenNote()" id="btn-note-delete" class="tool-btn danger">Delete</button>
+            <button type="button" onclick="closeNoteEditor(false)" class="tool-btn">Cancel</button>
+        </div>
+    </div>
+
+
+    <div id="ticker-log" class="dice-history-ticker">
+        <div class="ticker-entry" id="ticker-empty-msg" style="color: #444; border: none;">[ Log Empty ]</div>
+    </div>
+
+
+    <div class="video-ribbon">
+        <div class="video-box" id="local-video-container">
+            <video id="local-video" autoplay muted playsinline></video>
+            <div id="local-name" class="video-label">You</div>
+            <div class="video-controls-overlay">
+                <button id="toggle-mic-btn" class="media-toggle-btn" onclick="toggleLocalAudio()">Mute</button>
+                <button id="toggle-cam-btn" class="media-toggle-btn" onclick="toggleLocalVideo()">Cam Off</button>
+            </div>
+        </div>
+    </div>
+</div>
+    
+ 
+    
+<script src="js/00-state.js"></script>
+<script src="js/01-assets.js"></script>
+<script src="js/02-login.js"></script>
+<script src="js/03-network.js"></script>
+<script src="js/04-table-sync.js"></script>
+<script src="js/05-canvas-input.js"></script>
+<script src="js/06-render.js"></script>
+<script src="js/07-tools.js"></script>
+<script src="js/08-media-video.js"></script>
+<script src="js/09-persistence.js"></script>
+<script src="js/10-version.js"></script>
+</body>
+</html>
