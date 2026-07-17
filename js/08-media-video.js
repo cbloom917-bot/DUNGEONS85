@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.7 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.9.1 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -139,6 +139,21 @@ function stopLocalMediaStream() {
     }
 }
 
+function isPeerCallClosed(call) {
+    if (!call || call._d85Closed) return true;
+
+    const peerConnection = call.peerConnection;
+    if (!peerConnection) return false;
+
+    const connectionState = peerConnection.connectionState;
+    const iceConnectionState = peerConnection.iceConnectionState;
+
+    return connectionState === 'closed' ||
+        connectionState === 'failed' ||
+        iceConnectionState === 'closed' ||
+        iceConnectionState === 'failed';
+}
+
 function prunePeerCallSet(peerId) {
     const key = String(peerId || '');
     if (!key) return new Set();
@@ -147,7 +162,7 @@ function prunePeerCallSet(peerId) {
     if (!calls) return new Set();
 
     Array.from(calls).forEach(call => {
-        if (!call || call._d85Closed || call.open === false) {
+        if (isPeerCallClosed(call)) {
             calls.delete(call);
         }
     });
@@ -158,6 +173,28 @@ function prunePeerCallSet(peerId) {
 
 function hasActivePeerCall(peerId) {
     return prunePeerCallSet(peerId).size > 0;
+}
+
+
+function handlePeerCallError(peerId, call, err, context = 'PeerJS call error') {
+    debugWarn(`DEBUG: ${context}:`, err);
+
+    // registerPeerCall() removes the erroring call before this listener runs.
+    // If another call for the same peer is still active, the error came from a
+    // superseded call and must not close its replacement.
+    if (hasActivePeerCall(peerId)) {
+        debugWarn("DEBUG: Ignoring stale PeerJS call error; replacement call is active.");
+        return;
+    }
+
+    try {
+        if (call && typeof call.close === 'function') call.close();
+    } catch (closeErr) {
+        debugWarn("DEBUG: Failed to close errored PeerJS call:", closeErr);
+    }
+
+    const box = document.getElementById(`video-${String(peerId || '')}`);
+    if (box) refreshRemoteMediaStatus(box, null);
 }
 
 function hasLocalMediaTracks() {
@@ -286,11 +323,13 @@ function closeAllPeerConnections() {
 
 async function replaceVideoTrackOnActivePeerCalls(videoTrack) {
     const replacements = [];
-    let matchedSenders = 0;
+    let successfulReplacements = 0;
 
-    activePeerCalls.forEach(calls => {
-        Array.from(calls || []).forEach(call => {
-            if (!call || call._d85Closed || !call.peerConnection) return;
+    Array.from(activePeerCalls.keys()).forEach(peerId => {
+        const calls = prunePeerCallSet(peerId);
+
+        Array.from(calls).forEach(call => {
+            if (isPeerCallClosed(call) || !call.peerConnection) return;
 
             const senders = typeof call.peerConnection.getSenders === 'function'
                 ? call.peerConnection.getSenders()
@@ -304,18 +343,22 @@ async function replaceVideoTrackOnActivePeerCalls(videoTrack) {
                 if (!isVideoSender) return;
 
                 sender._d85VideoSender = true;
-                matchedSenders += 1;
                 replacements.push(
-                    sender.replaceTrack(videoTrack || null).catch(err => {
-                        debugWarn("DEBUG: Failed to replace outgoing camera track:", err);
-                    })
+                    Promise.resolve()
+                        .then(() => sender.replaceTrack(videoTrack || null))
+                        .then(() => {
+                            successfulReplacements += 1;
+                        })
+                        .catch(err => {
+                            debugWarn("DEBUG: Failed to replace outgoing camera track:", err);
+                        })
                 );
             });
         });
     });
 
     await Promise.all(replacements);
-    return matchedSenders;
+    return successfulReplacements;
 }
 
 function applyVttVideoSenderSettings(call) {
@@ -380,8 +423,7 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         });
 
         call.on('error', (err) => {
-            debugWarn(`DEBUG: PeerJS call failed during ${reason}:`, err);
-            closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
+            handlePeerCallError(player.peerId, call, err, `PeerJS call failed during ${reason}`);
         });
 
         return call;
@@ -392,13 +434,18 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
     }
 }
 
-function refreshPeerMediaConnections(reason = "media-refresh") {
-    if (!peer || !localStream || !Array.isArray(currentActiveRoomArray)) return;
+function refreshPeerMediaConnections(reason = "media-refresh", options = {}) {
+    if (!peer || !localStream || !Array.isArray(currentActiveRoomArray)) return 0;
+
+    let callsStarted = 0;
 
     currentActiveRoomArray.forEach(p => {
         if (!p || !p.peerId || p.peerId === localPeerId) return;
-        callPeerWithLocalStream(p, reason);
+        if (options.onlyMissing && hasActivePeerCall(p.peerId)) return;
+        if (callPeerWithLocalStream(p, reason)) callsStarted += 1;
     });
+
+    return callsStarted;
 }
 
 

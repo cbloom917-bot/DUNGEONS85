@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.9.1 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -6,6 +6,36 @@
 // ============================================================
 
 let networkRecoveryHooksInstalled = false;
+let peerMediaRecoveryTimers = [];
+
+const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000];
+
+function clearPeerMediaRecoveryTimers() {
+    peerMediaRecoveryTimers.forEach(timer => clearTimeout(timer));
+    peerMediaRecoveryTimers = [];
+}
+
+function recoverMissingPeerMediaCalls(source) {
+    if (!peer || peer.disconnected || peer.destroyed || !hasLocalMediaTracks()) return;
+
+    const callsStarted = refreshPeerMediaConnections(`reconnect-${source}`, { onlyMissing: true });
+    if (callsStarted) {
+        debugWarn(`DEBUG: Recovering ${callsStarted} PeerJS media call(s) after ${source}.`);
+    }
+}
+
+function schedulePeerMediaRecovery(source) {
+    clearPeerMediaRecoveryTimers();
+
+    PEER_MEDIA_RECOVERY_DELAYS_MS.forEach(delayMs => {
+        const timer = setTimeout(() => {
+            peerMediaRecoveryTimers = peerMediaRecoveryTimers.filter(activeTimer => activeTimer !== timer);
+            recoverMissingPeerMediaCalls(source);
+        }, delayMs);
+
+        peerMediaRecoveryTimers.push(timer);
+    });
+}
 
 function requestNetworkRecovery(source) {
     debugWarn(`DEBUG: Network recovery requested by ${source}`);
@@ -46,6 +76,8 @@ function initHybridMediaVttStack(roomName, playerName) {
     hasReceivedInitialSketchSync = false;
 
     let peerOpenHandled = false;
+    let hasSocketConnectedOnce = false;
+    clearPeerMediaRecoveryTimers();
     installNetworkRecoveryHooksOnce();
 
     if (socket) {
@@ -88,6 +120,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         if (peerOpenHandled) {
             debugWarn("DEBUG: PeerJS re-open after reconnect; preserving existing Socket.IO client.");
+            schedulePeerMediaRecovery('peer-reopen');
             return;
         }
 
@@ -128,6 +161,9 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
         socket.on('connect', () => {
+            const isSocketReconnect = hasSocketConnectedOnce;
+            hasSocketConnectedOnce = true;
+
             debugLog("DEBUG: Socket connected", socket.id);
             activeRoomName = roomName;
 
@@ -164,6 +200,10 @@ function initHybridMediaVttStack(roomName, playerName) {
                 isDM: tableState.isDM,
                 peerId: localPeerId
             });
+
+            if (isSocketReconnect) {
+                schedulePeerMediaRecovery('socket-reconnect');
+            }
 
             // The server now owns join/rejoin notifications.
             // Do not send a client-side "created table" message here, because
@@ -255,8 +295,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             });
 
             call.on('error', (err) => {
-                debugWarn("DEBUG: Incoming PeerJS call error:", err);
-                closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
+                handlePeerCallError(callerPeerId, call, err, 'Incoming PeerJS call error');
             });
         });
 

@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.7 — 02-login.js
+// Dungeons '85 Public Beta 9.7.3.4.9.1 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -261,8 +261,12 @@ async function toggleLocalAudio() {
 
             publishLocalMediaState();
 
-            // Audio mute/unmute only toggles the existing track. Do not refresh
-            // PeerJS calls here; renegotiating on mute caused remote videos to blink.
+            // Normal mute/unmute keeps healthy calls in place. After sleep/wake,
+            // a missing call may need to be recreated before the enabled track can
+            // reach the table; repair only missing calls so established feeds do not blink.
+            if (existingTrack.enabled) {
+                refreshPeerMediaConnections("microphone-recovery", { onlyMissing: true });
+            }
             return;
         }
 
@@ -353,6 +357,8 @@ async function toggleLocalVideo() {
                 const replacedVideoSenders = await replaceVideoTrackOnActivePeerCalls(videoTrack);
                 if (!replacedVideoSenders) {
                     refreshPeerMediaConnections("camera-permission");
+                } else {
+                    refreshPeerMediaConnections("camera-recovery", { onlyMissing: true });
                 }
             }
         } catch (err) {

@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 07-tools.js
+// Dungeons '85 Public Beta 9.7.3.4.9.1 — 07-tools.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -70,6 +70,27 @@ function addResultToHistoryTicker(player, sides, result) {
 
 let torchInterval = null;
 let torchSeconds = 0;
+let torchExpiresAt = null;
+
+
+function reconcileTorchTimer() {
+        if (!torchExpiresAt) return;
+
+        torchSeconds = Math.max(0, Math.ceil((torchExpiresAt - Date.now()) / 1000));
+
+        if (torchSeconds <= 0) {
+            extinguishTorch();
+            return;
+        }
+
+        updateTorchDisplay();
+    }
+
+
+function startTorchInterval() {
+        clearInterval(torchInterval);
+        torchInterval = setInterval(reconcileTorchTimer, 1000);
+    }
 
 
 function toggleTorchPanel() {
@@ -82,6 +103,7 @@ function igniteTorch() {
         clearInterval(torchInterval);
         const randomDeduction = Math.floor(Math.random() * 301);
         torchSeconds = 3600 - randomDeduction;
+        torchExpiresAt = Date.now() + (torchSeconds * 1000);
 
 
         document.getElementById('torch-light-btn').classList.add('active');
@@ -99,19 +121,15 @@ function igniteTorch() {
         }
 
 
-        torchInterval = setInterval(() => {
-            torchSeconds--;
-            if (torchSeconds <= 0) {
-                torchSeconds = 0;
-                extinguishTorch();
-            }
-            updateTorchDisplay();
-        }, 1000);
+        startTorchInterval();
     }
 
 
 function extinguishTorch() {
         clearInterval(torchInterval);
+        torchInterval = null;
+        torchExpiresAt = null;
+        torchSeconds = 0;
         document.getElementById('torch-light-btn').classList.remove('active');
         document.getElementById('torch-dark-status').classList.add('active');
         updateTorchDisplay();
@@ -132,6 +150,14 @@ function updateTorchDisplay() {
         const m = Math.floor(torchSeconds / 60).toString().padStart(2, '0');
         const s = (torchSeconds % 60).toString().padStart(2, '0');
         document.getElementById('torch-clock').innerText = `${m}:${s}`;
+    }
+
+
+if (!window.__d85TorchRecoveryHookInstalled) {
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') reconcileTorchTimer();
+        });
+        window.__d85TorchRecoveryHookInstalled = true;
     }
 
 
