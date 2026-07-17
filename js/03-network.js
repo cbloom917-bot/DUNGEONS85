@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.3 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.9.4 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -8,11 +8,15 @@
 let networkRecoveryHooksInstalled = false;
 let peerMediaRecoveryTimers = [];
 let peerHardRecoveryTimer = null;
-let peerHardRecoveryInProgress = false;
-let rebuildCurrentPeerClient = null;
+let peerHardRecoveryEligible = false;
+let peerHardRecoveryAttempted = false;
+let peerIdentityMigrationInProgress = false;
+let peerCallStartupFailures = new Map();
+let beginFreshPeerIdentityMigration = null;
 
 const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
 const PEER_HARD_RECOVERY_DELAY_MS = 14000;
+const PEER_HARD_RECOVERY_FAILURE_THRESHOLD = 2;
 
 function clearPeerMediaRecoveryTimers() {
     peerMediaRecoveryTimers.forEach(timer => clearTimeout(timer));
@@ -25,42 +29,110 @@ function clearPeerHardRecoveryTimer() {
     peerHardRecoveryTimer = null;
 }
 
-function schedulePeerHardRecoveryCheck(source) {
-    if (source !== 'peer-reopen' && source !== 'socket-reconnect') return;
+function getExpectedPeerMediaPlayers() {
+    if (!Array.isArray(currentActiveRoomArray)) return [];
+
+    const localHasMedia = hasLocalMediaTracks();
+    return currentActiveRoomArray.filter(player => {
+        if (!player || !player.peerId || String(player.peerId) === String(localPeerId)) return false;
+        return localHasMedia || player.micEnabled === true || player.camEnabled === true;
+    });
+}
+
+function getMissingExpectedPeerMediaPlayers() {
+    return getExpectedPeerMediaPlayers().filter(player =>
+        !hasActivePeerCall(player.peerId, {
+            includeDisconnected: true,
+            closePruned: true
+        })
+    );
+}
+
+function resetPeerHardRecoveryCycle() {
+    clearPeerHardRecoveryTimer();
+    peerCallStartupFailures.clear();
+    peerHardRecoveryEligible = false;
+    peerHardRecoveryAttempted = false;
+}
+
+function armPeerHardRecoveryCycle(source) {
+    peerHardRecoveryEligible = true;
+    peerHardRecoveryAttempted = false;
+    peerCallStartupFailures.clear();
+    debugWarn(`DEBUG: PeerJS hard recovery armed after ${source}.`);
+}
+
+function triggerPeerHardRecovery(reason) {
+    if (!peerHardRecoveryEligible || peerHardRecoveryAttempted || peerIdentityMigrationInProgress) return;
+    if (!socket || !socket.connected || !peer || peer.destroyed) return;
+    if (typeof beginFreshPeerIdentityMigration !== 'function') return;
+
+    const expectedPlayers = getExpectedPeerMediaPlayers();
+    if (!expectedPlayers.length) {
+        // The browser may have slept while both sides had media off. Keep this
+        // reconnect cycle eligible so later first-mic/first-camera call timeouts
+        // can still trigger fresh-ID migration.
+        peerCallStartupFailures.clear();
+        return;
+    }
+
+    const missingPlayers = expectedPlayers.filter(player =>
+        !hasActivePeerCall(player.peerId, {
+            includeDisconnected: true,
+            closePruned: true
+        })
+    );
+    if (!missingPlayers.length) {
+        resetPeerHardRecoveryCycle();
+        return;
+    }
+
+    peerHardRecoveryAttempted = true;
+    debugWarn(
+        `DEBUG: PeerJS reports locally healthy but ${missingPlayers.length} media peer(s) remain unreachable after ${reason}; migrating to a fresh PeerJS identity.`
+    );
+    beginFreshPeerIdentityMigration(`unreachable-after-${reason}`);
+}
+
+function schedulePeerHardRecoveryCheck(source, delayMs = PEER_HARD_RECOVERY_DELAY_MS) {
+    if (!peerHardRecoveryEligible || peerHardRecoveryAttempted || peerIdentityMigrationInProgress) return;
 
     clearPeerHardRecoveryTimer();
     peerHardRecoveryTimer = setTimeout(() => {
         peerHardRecoveryTimer = null;
+        triggerPeerHardRecovery(source);
+    }, delayMs);
+}
 
-        if (peerHardRecoveryInProgress || !socket || !socket.connected) return;
-        if (!peer || peer.destroyed || !hasLocalMediaTracks()) return;
-        if (!Array.isArray(currentActiveRoomArray)) return;
+function notePeerCallStartupFailure(peerId, reason) {
+    if (!peerHardRecoveryEligible || peerHardRecoveryAttempted || peerIdentityMigrationInProgress) return;
 
-        const remotePlayers = currentActiveRoomArray.filter(player =>
-            player && player.peerId && player.peerId !== localPeerId
-        );
-        if (!remotePlayers.length) return;
+    const key = String(peerId || '');
+    if (!key) return;
 
-        const missingPlayers = remotePlayers.filter(player =>
-            !hasActivePeerCall(player.peerId, {
-                includeDisconnected: true,
-                closePruned: true
-            })
-        );
-        if (!missingPlayers.length) return;
+    const nextCount = (peerCallStartupFailures.get(key) || 0) + 1;
+    peerCallStartupFailures.set(key, nextCount);
 
-        debugWarn(
-            `DEBUG: PeerJS reports open but ${missingPlayers.length} media peer(s) remain unreachable after ${source}; forcing same-ID broker re-registration.`
-        );
+    if (nextCount >= PEER_HARD_RECOVERY_FAILURE_THRESHOLD) {
+        schedulePeerHardRecoveryCheck(`startup-timeout-${reason}`, 250);
+    }
+}
 
-        if (typeof rebuildCurrentPeerClient === 'function') {
-            rebuildCurrentPeerClient(`unreachable-after-${source}`);
+function notePeerCallEstablished(peerId) {
+    const key = String(peerId || '');
+    if (key) peerCallStartupFailures.delete(key);
+    if (!peerHardRecoveryEligible) return;
+
+    setTimeout(() => {
+        if (!getMissingExpectedPeerMediaPlayers().length) {
+            resetPeerHardRecoveryCycle();
         }
-    }, PEER_HARD_RECOVERY_DELAY_MS);
+    }, 0);
 }
 
 function recoverMissingPeerMediaCalls(source) {
-    if (!peer || peer.disconnected || peer.destroyed || !hasLocalMediaTracks()) return;
+    if (peerIdentityMigrationInProgress) return;
+    if (!peer || !peer.open || peer.disconnected || peer.destroyed || !hasLocalMediaTracks()) return;
 
     const callsStarted = refreshPeerMediaConnections(`reconnect-${source}`, {
         onlyMissing: true,
@@ -73,7 +145,10 @@ function recoverMissingPeerMediaCalls(source) {
 
 function schedulePeerMediaRecovery(source) {
     clearPeerMediaRecoveryTimers();
-    schedulePeerHardRecoveryCheck(source);
+
+    if (source === 'peer-reopen' || source === 'socket-reconnect') {
+        schedulePeerHardRecoveryCheck(source);
+    }
 
     PEER_MEDIA_RECOVERY_DELAYS_MS.forEach(delayMs => {
         const timer = setTimeout(() => {
@@ -93,7 +168,7 @@ function requestNetworkRecovery(source) {
         socket.connect();
     }
 
-    if (!peerHardRecoveryInProgress && peer && peer.disconnected && !peer.destroyed) {
+    if (!peerIdentityMigrationInProgress && peer && peer.disconnected && !peer.destroyed) {
         debugWarn("DEBUG: Requesting PeerJS reconnect");
         peer.reconnect();
     }
@@ -130,7 +205,7 @@ function installIncomingPeerCallHandler(peerClient) {
 
         debugLog("DEBUG: Incoming PeerJS call from", call.peer);
 
-        const caller = currentActiveRoomArray.find(p => p.peerId === call.peer);
+        const caller = currentActiveRoomArray.find(p => String(p.peerId) === String(call.peer));
         ensurePlayerVideoSeat({
             peerId: call.peer,
             name: caller ? caller.name : 'Player',
@@ -148,11 +223,6 @@ function installIncomingPeerCallHandler(peerClient) {
         }
 
         const callerPeerId = String(call.peer || '');
-
-        // Keep a single live PeerJS media call per remote peer. If a reconnect
-        // or camera refresh creates a new incoming call, close the old call
-        // before accepting the new one instead of using a second timestamp
-        // dedupe state machine.
         closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
         registerPeerCall(callerPeerId, call);
         call.answer(localStream);
@@ -185,10 +255,17 @@ function initHybridMediaVttStack(roomName, playerName) {
 
     let peerOpenHandled = false;
     let hasSocketConnectedOnce = false;
+    let dmSeatConflictRetryTimer = null;
+    let dmSeatConflictRetryCount = 0;
+    let pendingPeerIdentityMigration = null;
+
     clearPeerMediaRecoveryTimers();
     clearPeerHardRecoveryTimer();
-    peerHardRecoveryInProgress = false;
-    rebuildCurrentPeerClient = null;
+    peerHardRecoveryEligible = false;
+    peerHardRecoveryAttempted = false;
+    peerIdentityMigrationInProgress = false;
+    peerCallStartupFailures.clear();
+    beginFreshPeerIdentityMigration = null;
     installNetworkRecoveryHooksOnce();
 
     if (socket) {
@@ -210,121 +287,138 @@ function initHybridMediaVttStack(roomName, playerName) {
         }
     };
 
-    const sameIdRetryDelaysMs = [500, 1500, 3000];
+    const showPeerIdentityMigrationFailure = (message) => {
+        const userMessage = message || 'Media reconnect failed. Refresh the page to rejoin the table.';
+        debugError(`DEBUG: ${userMessage}`);
+        if (typeof addResultToHistoryTicker === 'function') {
+            addResultToHistoryTicker('[SYS]', 0, userMessage.toUpperCase());
+        }
+    };
 
-    const createReplacementPeerClient = (preservedPeerId, retryIndex = 0) => {
-        if (!preservedPeerId) {
-            peerHardRecoveryInProgress = false;
-            debugError("DEBUG: Cannot rebuild PeerJS client without a preserved peerId.");
-            return;
+    const completePeerIdentityMigration = (oldPeerId, newPeerId) => {
+        const pending = pendingPeerIdentityMigration;
+        if (!pending) return;
+        if (String(pending.oldPeerId) !== String(oldPeerId) || String(pending.newPeerId) !== String(newPeerId)) return;
+
+        clearTimeout(pending.openTimeout);
+        replacePeerIdentityLocally(oldPeerId, newPeerId);
+
+        try {
+            if (pending.stalePeer && !pending.stalePeer.destroyed) pending.stalePeer.destroy();
+        } catch (err) {
+            debugWarn('DEBUG: Failed to destroy superseded PeerJS client after identity migration:', err);
         }
 
-        const replacementPeer = new Peer(preservedPeerId, webrtcIceConfig);
-        peer = replacementPeer;
-        installIncomingPeerCallHandler(replacementPeer);
+        pendingPeerIdentityMigration = null;
+        peerIdentityMigrationInProgress = false;
+        peerHardRecoveryEligible = false;
+        peerCallStartupFailures.clear();
+        clearPeerHardRecoveryTimer();
 
-        replacementPeer.on('disconnected', () => {
-            if (peer !== replacementPeer || peerHardRecoveryInProgress) return;
-            debugWarn("DEBUG: Rebuilt PeerJS client disconnected; attempting reconnect");
-            if (replacementPeer.disconnected && !replacementPeer.destroyed) replacementPeer.reconnect();
+        debugWarn(`DEBUG: PeerJS identity migration complete ${oldPeerId} -> ${newPeerId}.`);
+        schedulePeerMediaRecovery('identity-replaced');
+    };
+
+    const failPeerIdentityMigration = (message) => {
+        const pending = pendingPeerIdentityMigration;
+        if (!pending) return;
+
+        clearTimeout(pending.openTimeout);
+        try {
+            if (pending.replacementPeer && !pending.replacementPeer.destroyed) pending.replacementPeer.destroy();
+        } catch (err) {
+            debugWarn('DEBUG: Failed to destroy unsuccessful replacement PeerJS client:', err);
+        }
+
+        if (peer === pending.replacementPeer) peer = pending.stalePeer;
+        pendingPeerIdentityMigration = null;
+        peerIdentityMigrationInProgress = false;
+        showPeerIdentityMigrationFailure(message);
+    };
+
+    const installPeerLifecycleHandlers = (peerClient, label) => {
+        installIncomingPeerCallHandler(peerClient);
+
+        peerClient.on('disconnected', () => {
+            if (peer !== peerClient || peerIdentityMigrationInProgress) return;
+            armPeerHardRecoveryCycle(`${label}-disconnected`);
+            debugWarn(`DEBUG: ${label} disconnected; attempting reconnect`);
+            if (peerClient.disconnected && !peerClient.destroyed) peerClient.reconnect();
         });
 
-        replacementPeer.on('close', () => {
-            if (peer === replacementPeer) debugWarn("DEBUG: Rebuilt PeerJS client closed");
+        peerClient.on('close', () => {
+            if (peer === peerClient) debugWarn(`DEBUG: ${label} closed`);
         });
 
-        replacementPeer.on('error', (err) => {
-            if (peer !== replacementPeer) return;
-            debugError("DEBUG: Rebuilt PeerJS client error:", err);
-
-            const errorType = String(err?.type || '');
-            if (peerHardRecoveryInProgress && errorType === 'unavailable-id' && retryIndex < sameIdRetryDelaysMs.length) {
-                const retryDelay = sameIdRetryDelaysMs[retryIndex];
-                debugWarn(`DEBUG: Preserved PeerJS ID is not released yet; retrying same-ID registration in ${retryDelay} ms.`);
-
-                try {
-                    replacementPeer.destroy();
-                } catch (destroyErr) {
-                    debugWarn("DEBUG: Failed to destroy unavailable replacement PeerJS client:", destroyErr);
-                }
-
-                setTimeout(() => {
-                    if (peer === replacementPeer || !peer) {
-                        createReplacementPeerClient(preservedPeerId, retryIndex + 1);
-                    }
-                }, retryDelay);
-                return;
-            }
-
-            if (peerHardRecoveryInProgress && errorType === 'unavailable-id') {
-                peerHardRecoveryInProgress = false;
-                debugError("DEBUG: Preserved PeerJS ID could not be re-registered after bounded retries.");
-            }
-        });
-
-        replacementPeer.on('open', (peerId) => {
-            if (peer !== replacementPeer) return;
-
-            debugLog("DEBUG: PeerJS hard re-registration open", peerId);
-            localPeerId = peerId;
-            peerHardRecoveryInProgress = false;
-
-            const localVideoBox = document.getElementById('local-video-container');
-            if (localVideoBox) localVideoBox.dataset.peerId = localPeerId || "local";
-
-            schedulePeerMediaRecovery('peer-hard-reregister');
+        peerClient.on('error', (err) => {
+            if (peer === peerClient) debugError(`DEBUG: ${label} error:`, err);
         });
     };
 
-    rebuildCurrentPeerClient = (reason) => {
-        if (peerHardRecoveryInProgress) return;
+    beginFreshPeerIdentityMigration = (reason) => {
+        if (peerIdentityMigrationInProgress || pendingPeerIdentityMigration) return;
+        if (!socket || !socket.connected) return;
 
-        const preservedPeerId = localPeerId || peer?.id;
-        if (!preservedPeerId) {
-            debugError("DEBUG: PeerJS hard recovery skipped because no peerId is available.");
+        const oldPeerId = String(localPeerId || peer?.id || '');
+        if (!oldPeerId) {
+            showPeerIdentityMigrationFailure('Media reconnect failed because the current peer identity is unavailable.');
             return;
         }
 
-        peerHardRecoveryInProgress = true;
+        peerIdentityMigrationInProgress = true;
         clearPeerMediaRecoveryTimers();
         clearPeerHardRecoveryTimer();
-        closeAllPeerConnections();
+        closeAllPeerConnections({ preserveVideoDuringRefresh: true });
 
         const stalePeer = peer;
-        debugWarn(`DEBUG: Rebuilding PeerJS signaling client with preserved ID ${preservedPeerId} after ${reason}.`);
+        const replacementPeer = new Peer(undefined, webrtcIceConfig);
+        peer = replacementPeer;
+        installPeerLifecycleHandlers(replacementPeer, 'Replacement PeerJS');
 
-        try {
-            if (stalePeer && !stalePeer.destroyed) stalePeer.destroy();
-        } catch (err) {
-            debugWarn("DEBUG: Failed to destroy stale PeerJS client before hard recovery:", err);
-        }
+        const openTimeout = setTimeout(() => {
+            failPeerIdentityMigration('Media reconnect failed while requesting a fresh PeerJS identity. Refresh to rejoin.');
+        }, 10000);
 
-        if (peer === stalePeer) peer = null;
+        pendingPeerIdentityMigration = {
+            oldPeerId,
+            newPeerId: null,
+            stalePeer,
+            replacementPeer,
+            openTimeout,
+            reason
+        };
 
-        setTimeout(() => {
-            if (peerHardRecoveryInProgress && !peer) {
-                createReplacementPeerClient(preservedPeerId);
+        debugWarn(`DEBUG: Creating fresh PeerJS identity after ${reason}; preserving the existing Socket.IO seat.`);
+
+        replacementPeer.on('open', (newPeerId) => {
+            const pending = pendingPeerIdentityMigration;
+            if (!pending || peer !== replacementPeer || pending.replacementPeer !== replacementPeer) return;
+
+            pending.newPeerId = String(newPeerId || '');
+            if (!pending.newPeerId) {
+                failPeerIdentityMigration('Media reconnect failed because PeerJS returned an empty identity. Refresh to rejoin.');
+                return;
             }
-        }, 250);
+
+            debugLog('DEBUG: Fresh PeerJS identity open', pending.newPeerId);
+            socket.emit('replacePeerIdentity', {
+                oldPeerId: pending.oldPeerId,
+                newPeerId: pending.newPeerId
+            }, (result) => {
+                if (!result || result.ok !== true) {
+                    const message = result?.message || 'Media identity migration was rejected by the table server. Refresh to rejoin.';
+                    failPeerIdentityMigration(message);
+                    return;
+                }
+
+                completePeerIdentityMigration(pending.oldPeerId, pending.newPeerId);
+            });
+        });
     };
 
     peer = new Peer(undefined, webrtcIceConfig);
     const initialPeer = peer;
-    installIncomingPeerCallHandler(initialPeer);
-
-    initialPeer.on('disconnected', () => {
-        if (peer !== initialPeer) return;
-        debugWarn("DEBUG: PeerJS disconnected; attempting reconnect");
-        if (initialPeer.disconnected && !initialPeer.destroyed) initialPeer.reconnect();
-    });
-
-    initialPeer.on('close', () => {
-        if (peer === initialPeer) debugWarn("DEBUG: PeerJS closed");
-    });
-
-    initialPeer.on('error', (err) => {
-        if (peer === initialPeer) debugError("DEBUG: PeerJS error:", err);
-    });
+    installPeerLifecycleHandlers(initialPeer, 'PeerJS');
 
     initialPeer.on('open', (peerId) => {
         if (peer !== initialPeer) return;
@@ -344,8 +438,24 @@ function initHybridMediaVttStack(roomName, playerName) {
             transports: ["websocket"]
         });
 
+        const clearDmSeatConflictRetry = () => {
+            if (dmSeatConflictRetryTimer) clearTimeout(dmSeatConflictRetryTimer);
+            dmSeatConflictRetryTimer = null;
+        };
+
+        const emitJoinRoom = () => {
+            if (!socket || !socket.connected) return;
+            socket.emit('joinRoom', {
+                roomName,
+                playerName,
+                isDM: tableState.isDM,
+                peerId: localPeerId
+            });
+        };
+
         // Debug-only reconnect diagnostics. These stay gated by D85_DEBUG_LOGS.
         socket.on('disconnect', (reason) => {
+            if (hasSocketConnectedOnce) armPeerHardRecoveryCycle('socket-disconnect');
             debugWarn("DEBUG: Socket disconnected:", reason);
         });
 
@@ -407,12 +517,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 makeElementsDraggable();
             }, 50);
 
-            socket.emit('joinRoom', {
-                roomName,
-                playerName,
-                isDM: tableState.isDM,
-                peerId: localPeerId
-            });
+            emitJoinRoom();
 
             if (isSocketReconnect) {
                 schedulePeerMediaRecovery('socket-reconnect');
@@ -427,16 +532,54 @@ function initHybridMediaVttStack(roomName, playerName) {
             const errorCode = error && typeof error === 'object' ? error.code : null;
             const message = error && typeof error === 'object' ? error.message : error;
 
+            if (errorCode === 'DM_SEAT_CONFLICT' && tableState.isDM && dmSeatConflictRetryCount < 2) {
+                const retryDelays = [5000, 15000];
+                const retryDelay = retryDelays[dmSeatConflictRetryCount];
+                dmSeatConflictRetryCount += 1;
+                clearDmSeatConflictRetry();
+                debugWarn(`DEBUG: DM seat conflict; retrying join in ${retryDelay} ms.`);
+                dmSeatConflictRetryTimer = setTimeout(() => {
+                    dmSeatConflictRetryTimer = null;
+                    emitJoinRoom();
+                }, retryDelay);
+                return;
+            }
+
             alert(typeof message === 'string' ? message : 'Unable to join this table.');
 
             if (errorCode === 'DM_SEAT_CONFLICT') return;
             window.location.reload();
         });
 
+        socket.on('seatProbe', (acknowledge) => {
+            if (typeof acknowledge === 'function') acknowledge();
+        });
+
+        socket.on('peerIdentityReplaced', (identity) => {
+            if (!identity || typeof identity !== 'object') return;
+
+            const oldPeerId = String(identity.oldPeerId || '');
+            const newPeerId = String(identity.newPeerId || '');
+            if (!oldPeerId || !newPeerId || oldPeerId === newPeerId) return;
+
+            const changed = replacePeerIdentityLocally(oldPeerId, newPeerId);
+            if (changed) {
+                debugWarn(`DEBUG: Applied PeerJS identity replacement ${oldPeerId} -> ${newPeerId}.`);
+            }
+
+            completePeerIdentityMigration(oldPeerId, newPeerId);
+            schedulePeerMediaRecovery('identity-replaced');
+        });
+
         socket.on('updatePlayerList', (playersArray) => {
             debugLog("DEBUG: updatePlayerList", playersArray);
 
             const previousPlayers = currentActiveRoomArray || [];
+
+            if (playersArray.some(player => String(player.peerId) === String(localPeerId))) {
+                dmSeatConflictRetryCount = 0;
+                clearDmSeatConflictRetry();
+            }
 
             previousPlayers.forEach(oldPlayer => {
                 const stillConnected = playersArray.some(p => p.peerId === oldPlayer.peerId);
@@ -467,9 +610,9 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             currentActiveRoomArray = sortPlayersForRibbon(playersArray);
 
-            // A returning participant can rejoin Socket.IO before PeerJS has fully
-            // re-registered its preserved peerId with the signaling broker. The
-            // immediate media offer may therefore receive peer-unavailable. Keep
+            // A returning participant can rejoin Socket.IO before its PeerJS
+            // identity is reachable through the signaling broker. The immediate
+            // media offer may therefore receive peer-unavailable. Keep
             // the retry bounded and let failed startup calls expire before the next
             // attempt instead of requiring a manual mic/camera toggle.
             if (shouldScheduleNewPeerRecovery) {

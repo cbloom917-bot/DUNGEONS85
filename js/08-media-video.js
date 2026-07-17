@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.2 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.9.4 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -151,6 +151,10 @@ function markPeerCallEstablished(call) {
     if (!call) return;
     call._d85MediaEstablished = true;
     clearPeerCallStartupTimer(call);
+
+    if (typeof notePeerCallEstablished === 'function') {
+        notePeerCallEstablished(call.peer);
+    }
 }
 
 function isPeerCallTransportConnected(call) {
@@ -286,6 +290,19 @@ function applyPlayerMediaStateToVideoBox(box, player) {
 function shouldInitiatePeerCall(remotePeerId, reason = "media-refresh") {
     if (!localPeerId || !remotePeerId || String(remotePeerId) === String(localPeerId)) return false;
 
+    if (reason === 'reconnect-identity-replaced') {
+        const remotePlayer = Array.isArray(currentActiveRoomArray)
+            ? currentActiveRoomArray.find(player => String(player?.peerId || '') === String(remotePeerId))
+            : null;
+        const remoteHasMedia = remotePlayer?.micEnabled === true || remotePlayer?.camEnabled === true;
+
+        // If only this side has a stream, it must originate the replacement call.
+        // When both sides have media, use one deterministic caller to avoid two
+        // simultaneous post-migration offers closing each other.
+        if (!remoteHasMedia) return true;
+        return String(localPeerId) < String(remotePeerId);
+    }
+
     // Local media changes must be offered by the client whose stream changed.
     // Normal table membership calls are deterministic so two browsers do not
     // call each other at the same time and create duplicate WebRTC connections.
@@ -364,9 +381,12 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
     }
 }
 
-function closeAllPeerConnections() {
+function closeAllPeerConnections(options = {}) {
     Array.from(activePeerCalls.keys()).forEach(peerId => {
-        closePeerConnectionsForPeer(peerId, { removeVideoBox: false });
+        closePeerConnectionsForPeer(peerId, {
+            removeVideoBox: false,
+            preserveVideoDuringRefresh: !!options.preserveVideoDuringRefresh
+        });
     });
     activePeerCalls.clear();
 }
@@ -480,11 +500,16 @@ function armOutgoingPeerCallStartupTimeout(peerId, call, reason) {
         } catch (err) {
             debugWarn("DEBUG: Failed to close timed-out PeerJS call:", err);
         }
+
+        if (typeof notePeerCallStartupFailure === 'function') {
+            notePeerCallStartupFailure(key, reason);
+        }
     }, PEER_CALL_STARTUP_TIMEOUT_MS);
 }
 
 function callPeerWithLocalStream(player, reason = "media-refresh") {
-    if (!peer || !localStream || !player || !player.peerId || player.peerId === localPeerId) return null;
+    if (!peer || !peer.open || peer.disconnected || peer.destroyed) return null;
+    if (!localStream || !player || !player.peerId || player.peerId === localPeerId) return null;
     if (!shouldInitiatePeerCall(player.peerId, reason)) return null;
 
     try {
@@ -527,7 +552,8 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
 }
 
 function refreshPeerMediaConnections(reason = "media-refresh", options = {}) {
-    if (!peer || !localStream || !Array.isArray(currentActiveRoomArray)) return 0;
+    if (!peer || !peer.open || peer.disconnected || peer.destroyed) return 0;
+    if (!localStream || !Array.isArray(currentActiveRoomArray)) return 0;
 
     let callsStarted = 0;
 
@@ -541,6 +567,68 @@ function refreshPeerMediaConnections(reason = "media-refresh", options = {}) {
     });
 
     return callsStarted;
+}
+
+function replacePeerIdInOrderedList(list, oldPeerId, newPeerId) {
+    const oldKey = String(oldPeerId || '');
+    const newKey = String(newPeerId || '');
+    if (!Array.isArray(list) || !oldKey || !newKey) return Array.isArray(list) ? [...list] : [];
+
+    const seen = new Set();
+    return list
+        .map(peerId => String(peerId) === oldKey ? newKey : String(peerId))
+        .filter(peerId => {
+            if (!peerId || seen.has(peerId)) return false;
+            seen.add(peerId);
+            return true;
+        });
+}
+
+function replacePeerIdentityLocally(oldPeerId, newPeerId) {
+    const oldKey = String(oldPeerId || '');
+    const newKey = String(newPeerId || '');
+    if (!oldKey || !newKey || oldKey === newKey) return false;
+
+    const isLocalIdentity = String(localPeerId || '') === oldKey;
+
+    if (!isLocalIdentity) {
+        // The old WebRTC call targets the retired broker identity. Preserve the
+        // existing video frame while the replacement call to the new identity starts.
+        closePeerConnectionsForPeer(oldKey, {
+            removeVideoBox: false,
+            preserveVideoDuringRefresh: true
+        });
+    }
+
+    const remoteBox = document.getElementById(`video-${oldKey}`);
+    if (remoteBox) {
+        remoteBox.id = `video-${newKey}`;
+        remoteBox.dataset.peerId = newKey;
+
+        const label = document.getElementById(`label-${oldKey}`);
+        if (label) label.id = `label-${newKey}`;
+    }
+
+    if (isLocalIdentity) {
+        localPeerId = newKey;
+        const localBox = getLocalVideoContainer();
+        if (localBox) localBox.dataset.peerId = newKey;
+    }
+
+    currentActiveRoomArray = (Array.isArray(currentActiveRoomArray) ? currentActiveRoomArray : [])
+        .map(player => String(player?.peerId || '') === oldKey
+            ? { ...player, peerId: newKey }
+            : player);
+
+    customVideoOrder = replacePeerIdInOrderedList(customVideoOrder, oldKey, newKey);
+    tableOrder = replacePeerIdInOrderedList(tableOrder, oldKey, newKey);
+
+    if (String(initiativePeerId || '') === oldKey) {
+        initiativePeerId = newKey;
+    }
+
+    if (initiativePeerId) setInitiativeSpotlight(initiativePeerId);
+    return true;
 }
 
 
