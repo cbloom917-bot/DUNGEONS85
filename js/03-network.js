@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.1 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.9.2 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -8,7 +8,7 @@
 let networkRecoveryHooksInstalled = false;
 let peerMediaRecoveryTimers = [];
 
-const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000];
+const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
 
 function clearPeerMediaRecoveryTimers() {
     peerMediaRecoveryTimers.forEach(timer => clearTimeout(timer));
@@ -18,7 +18,10 @@ function clearPeerMediaRecoveryTimers() {
 function recoverMissingPeerMediaCalls(source) {
     if (!peer || peer.disconnected || peer.destroyed || !hasLocalMediaTracks()) return;
 
-    const callsStarted = refreshPeerMediaConnections(`reconnect-${source}`, { onlyMissing: true });
+    const callsStarted = refreshPeerMediaConnections(`reconnect-${source}`, {
+        onlyMissing: true,
+        treatDisconnectedAsMissing: true
+    });
     if (callsStarted) {
         debugWarn(`DEBUG: Recovering ${callsStarted} PeerJS media call(s) after ${source}.`);
     }
@@ -237,6 +240,8 @@ function initHybridMediaVttStack(roomName, playerName) {
                 ensurePlayerVideoSeat(p);
             });
 
+            let shouldScheduleNewPeerRecovery = false;
+
             playersArray.forEach(p => {
                 const wasKnown = previousPlayers.some(existing => existing.peerId === p.peerId);
 
@@ -246,10 +251,21 @@ function initHybridMediaVttStack(roomName, playerName) {
                 // stream and do not create unnecessary calls.
                 if (p.peerId !== localPeerId && !wasKnown && hasLocalMediaTracks()) {
                     callPeerWithLocalStream(p, "new-peer-media-offer");
+                    shouldScheduleNewPeerRecovery = true;
                 }
             });
 
             currentActiveRoomArray = sortPlayersForRibbon(playersArray);
+
+            // A returning participant can rejoin Socket.IO before PeerJS has fully
+            // re-registered its preserved peerId with the signaling broker. The
+            // immediate media offer may therefore receive peer-unavailable. Keep
+            // the retry bounded and let failed startup calls expire before the next
+            // attempt instead of requiring a manual mic/camera toggle.
+            if (shouldScheduleNewPeerRecovery) {
+                schedulePeerMediaRecovery('player-list-return');
+            }
+
             sortVideoRibbon();
         });
 
@@ -285,6 +301,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             setTimeout(() => applyVttVideoSenderSettings(call), 0);
 
             call.on('stream', (remoteStream) => {
+                markPeerCallEstablished(call);
                 const displayName = caller ? caller.name : "Player";
                 addVideoFeed(remoteStream, callerPeerId, displayName, caller ? caller.isDM : false);
             });

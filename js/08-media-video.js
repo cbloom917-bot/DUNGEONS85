@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.1 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.9.2 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -139,6 +139,40 @@ function stopLocalMediaStream() {
     }
 }
 
+const PEER_CALL_STARTUP_TIMEOUT_MS = 3500;
+
+function clearPeerCallStartupTimer(call) {
+    if (!call || !call._d85StartupTimer) return;
+    clearTimeout(call._d85StartupTimer);
+    call._d85StartupTimer = null;
+}
+
+function markPeerCallEstablished(call) {
+    if (!call) return;
+    call._d85MediaEstablished = true;
+    clearPeerCallStartupTimer(call);
+}
+
+function isPeerCallTransportConnected(call) {
+    if (!call || !call.peerConnection) return false;
+
+    const connectionState = call.peerConnection.connectionState;
+    const iceConnectionState = call.peerConnection.iceConnectionState;
+
+    return connectionState === 'connected' ||
+        iceConnectionState === 'connected' ||
+        iceConnectionState === 'completed';
+}
+
+function isPeerCallDisconnected(call) {
+    if (!call || !call.peerConnection) return false;
+
+    const connectionState = call.peerConnection.connectionState;
+    const iceConnectionState = call.peerConnection.iceConnectionState;
+
+    return connectionState === 'disconnected' || iceConnectionState === 'disconnected';
+}
+
 function isPeerCallClosed(call) {
     if (!call || call._d85Closed) return true;
 
@@ -154,7 +188,7 @@ function isPeerCallClosed(call) {
         iceConnectionState === 'failed';
 }
 
-function prunePeerCallSet(peerId) {
+function prunePeerCallSet(peerId, options = {}) {
     const key = String(peerId || '');
     if (!key) return new Set();
 
@@ -162,8 +196,21 @@ function prunePeerCallSet(peerId) {
     if (!calls) return new Set();
 
     Array.from(calls).forEach(call => {
-        if (isPeerCallClosed(call)) {
-            calls.delete(call);
+        const shouldPrune = isPeerCallClosed(call) ||
+            (options.includeDisconnected && isPeerCallDisconnected(call));
+
+        if (!shouldPrune) return;
+
+        call._d85Closed = true;
+        clearPeerCallStartupTimer(call);
+        calls.delete(call);
+
+        if (options.closePruned && call && typeof call.close === 'function') {
+            try {
+                call.close();
+            } catch (err) {
+                debugWarn("DEBUG: Failed to close unusable PeerJS call:", err);
+            }
         }
     });
 
@@ -171,8 +218,8 @@ function prunePeerCallSet(peerId) {
     return activePeerCalls.get(key) || new Set();
 }
 
-function hasActivePeerCall(peerId) {
-    return prunePeerCallSet(peerId).size > 0;
+function hasActivePeerCall(peerId, options = {}) {
+    return prunePeerCallSet(peerId, options).size > 0;
 }
 
 
@@ -255,9 +302,11 @@ function registerPeerCall(peerId, call) {
     activePeerCalls.set(key, calls);
 
     call._d85Closed = false;
+    call._d85MediaEstablished = false;
 
     const forgetCall = () => {
         call._d85Closed = true;
+        clearPeerCallStartupTimer(call);
         const currentCalls = activePeerCalls.get(key);
         if (!currentCalls) return;
         currentCalls.delete(call);
@@ -280,6 +329,7 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
         Array.from(calls).forEach(call => {
             try {
                 call._d85Closed = true;
+                clearPeerCallStartupTimer(call);
                 if (call && typeof call.close === 'function') call.close();
             } catch (err) {
                 debugWarn("DEBUG: Failed to close stale PeerJS call:", err);
@@ -393,6 +443,46 @@ function applyVttVideoSenderSettings(call) {
     }
 }
 
+function armOutgoingPeerCallStartupTimeout(peerId, call, reason) {
+    if (!peerId || !call) return;
+
+    const peerConnection = call.peerConnection;
+    const markConnectedTransport = () => {
+        if (isPeerCallTransportConnected(call)) markPeerCallEstablished(call);
+    };
+
+    if (peerConnection && typeof peerConnection.addEventListener === 'function') {
+        peerConnection.addEventListener('connectionstatechange', markConnectedTransport);
+        peerConnection.addEventListener('iceconnectionstatechange', markConnectedTransport);
+    }
+
+    clearPeerCallStartupTimer(call);
+    call._d85StartupTimer = setTimeout(() => {
+        call._d85StartupTimer = null;
+
+        if (call._d85Closed || call._d85MediaEstablished) return;
+        if (isPeerCallTransportConnected(call)) {
+            markPeerCallEstablished(call);
+            return;
+        }
+
+        const key = String(peerId);
+        const calls = activePeerCalls.get(key);
+        if (!calls || !calls.has(call)) return;
+
+        debugWarn(`DEBUG: PeerJS call startup timed out during ${reason}; releasing failed call to ${key}.`);
+        call._d85Closed = true;
+        calls.delete(call);
+        if (!calls.size) activePeerCalls.delete(key);
+
+        try {
+            if (typeof call.close === 'function') call.close();
+        } catch (err) {
+            debugWarn("DEBUG: Failed to close timed-out PeerJS call:", err);
+        }
+    }, PEER_CALL_STARTUP_TIMEOUT_MS);
+}
+
 function callPeerWithLocalStream(player, reason = "media-refresh") {
     if (!peer || !localStream || !player || !player.peerId || player.peerId === localPeerId) return null;
     if (!shouldInitiatePeerCall(player.peerId, reason)) return null;
@@ -411,9 +501,11 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         if (!rawCall) return null;
 
         const call = registerPeerCall(player.peerId, rawCall);
+        armOutgoingPeerCallStartupTimeout(player.peerId, call, reason);
         setTimeout(() => applyVttVideoSenderSettings(call), 0);
 
         call.on('stream', (remoteStream) => {
+            markPeerCallEstablished(call);
             addVideoFeed(remoteStream, call.peer, player.name, player.isDM);
         });
 
@@ -441,7 +533,10 @@ function refreshPeerMediaConnections(reason = "media-refresh", options = {}) {
 
     currentActiveRoomArray.forEach(p => {
         if (!p || !p.peerId || p.peerId === localPeerId) return;
-        if (options.onlyMissing && hasActivePeerCall(p.peerId)) return;
+        if (options.onlyMissing && hasActivePeerCall(p.peerId, {
+            includeDisconnected: !!options.treatDisconnectedAsMissing,
+            closePruned: !!options.treatDisconnectedAsMissing
+        })) return;
         if (callPeerWithLocalStream(p, reason)) callsStarted += 1;
     });
 
