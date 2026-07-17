@@ -13,10 +13,12 @@ const MAX_SOCKET_PAYLOAD_BYTES = 16 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
 const COMMUNITY_STATS_SAVE_DEBOUNCE_MS = 2000;
+const MAP_TRANSFER_RESERVATION_TIMEOUT_MS = 120000;
+const MAP_TRANSFER_COMPLETION_TIMEOUT_MS = 120000;
 const RATE_LIMITS = Object.freeze({
     tokenMove: { windowMs: 1000, max: 30 },
     executeDiceRoll: { windowMs: 1000, max: 8 },
-    updateMapImage: { windowMs: 10000, max: 3 },
+    updateMapImage: { windowMs: 10000, max: 1 },
     updateFoW: { windowMs: 1000, max: 12 }
 });
 
@@ -142,6 +144,63 @@ app.get('/community-stats', (req, res) => {
 app.use(express.static(__dirname));
 
 const roomCampaignStates = {};
+
+function createMapTransferId() {
+    return `map-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sanitizeMapTransferRequest(payload) {
+    const request = payload && typeof payload === 'object' ? payload : {};
+    return {
+        reason: String(request.reason || 'map-update').slice(0, 40),
+        loadId: String(request.loadId || '').slice(0, 80)
+    };
+}
+
+function getMapTransferRetryAfterMs(transfer) {
+    if (!transfer) return 0;
+    return Math.max(0, Number(transfer.expiresAt) - Date.now()) || 1000;
+}
+
+function clearRoomMapTransfer(roomName, reason = 'complete') {
+    const state = roomCampaignStates[roomName];
+    if (!state || !state.mapTransfer) return;
+
+    const transfer = state.mapTransfer;
+    if (transfer.reservationTimer) clearTimeout(transfer.reservationTimer);
+    if (transfer.completionTimer) clearTimeout(transfer.completionTimer);
+    state.mapTransfer = null;
+
+    if (transfer.dmSocketId) {
+        io.to(transfer.dmSocketId).emit('mapTransferReleased', {
+            transferId: transfer.transferId,
+            reason
+        });
+    }
+}
+
+function maybeCompleteRoomMapTransfer(roomName) {
+    const state = roomCampaignStates[roomName];
+    const transfer = state && state.mapTransfer;
+    if (!transfer || transfer.phase !== 'broadcasting') return;
+    if (transfer.pendingPlayerSocketIds.size > 0) return;
+    clearRoomMapTransfer(roomName, 'players-complete');
+}
+
+function releaseSocketFromRoomMapTransfer(roomName, socketId) {
+    const state = roomCampaignStates[roomName];
+    const transfer = state && state.mapTransfer;
+    if (!transfer) return;
+
+    if (transfer.dmSocketId === socketId) {
+        clearRoomMapTransfer(roomName, 'dm-disconnected');
+        return;
+    }
+
+    if (transfer.pendingPlayerSocketIds.delete(socketId)) {
+        maybeCompleteRoomMapTransfer(roomName);
+    }
+}
 
 function sanitizeNote(note) {
     if (!note || typeof note !== 'object') return null;
@@ -491,7 +550,8 @@ io.on('connection', (socket) => {
                 initiativePeerId: null,
                 videoOrder: [],
                 tableOrder: [],
-                lastDmSeat: null
+                lastDmSeat: null,
+                mapTransfer: null
             };
             incrementCommunityStat('tablesSinceLaunch');
         }
@@ -533,6 +593,7 @@ io.on('connection', (socket) => {
             if (displacedDM) {
                 replacePeerIdInRoomState(state, displacedDM.peerId, peerId);
 
+                releaseSocketFromRoomMapTransfer(requestedRoom, displacedDM.socketId);
                 const staleDmSocket = io.sockets.sockets.get(displacedDM.socketId);
                 if (staleDmSocket && staleDmSocket.id !== socket.id) {
                     staleDmSocket.data.skipRoomCleanupForSeatReclaim = true;
@@ -547,6 +608,7 @@ io.on('connection', (socket) => {
             samePeerPlayers.forEach((stalePlayer) => {
                 if (stalePlayer.socketId === socket.id) return;
 
+                releaseSocketFromRoomMapTransfer(requestedRoom, stalePlayer.socketId);
                 const staleSocket = io.sockets.sockets.get(stalePlayer.socketId);
                 if (staleSocket) {
                     staleSocket.data.skipRoomCleanupForSeatReclaim = true;
@@ -605,7 +667,15 @@ io.on('connection', (socket) => {
                 polygons: state.fowPolygons,
                 darkness: state.isDarknessActive
             });
-            if (state.mapSrc) socket.emit('syncMap', state.mapSrc);
+            if (state.mapSrc) {
+                const activeTransfer = state.mapTransfer;
+                if (activeTransfer && activeTransfer.phase === 'broadcasting' && !joinedPlayer.isDM) {
+                    activeTransfer.pendingPlayerSocketIds.add(socket.id);
+                    socket.emit('syncMap', state.mapSrc, { transferId: activeTransfer.transferId });
+                } else {
+                    socket.emit('syncMap', state.mapSrc);
+                }
+            }
             socket.emit('syncTokens', state.tokens);
             socket.emit('syncNotes', joinedPlayer.isDM ? state.notes : getPublicNotes(state.notes));
             socket.emit('syncSketches', state.sketches || []);
@@ -918,23 +988,150 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('updateMapImage', (mapSrcString) => {
-        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
-        if (typeof mapSrcString !== 'string') return;
+    socket.on('requestMapTransfer', (payload, acknowledge) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'ROOM_UNAVAILABLE',
+                message: 'The table is not available for a map transfer.'
+            });
+            return;
+        }
 
         const state = roomCampaignStates[currentRoom];
         const player = state.players.find(p => p.socketId === socket.id);
-        if (!player || !player.isDM) return;
+        if (!player || !player.isDM) {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'DM_AUTHORITY_REQUIRED',
+                message: 'Only the Dungeon Master may send a map.'
+            });
+            return;
+        }
+
+        if (state.mapTransfer) {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'MAP_TRANSFER_BUSY',
+                message: 'A map is still being distributed. Please wait before loading another.',
+                retryAfterMs: getMapTransferRetryAfterMs(state.mapTransfer)
+            });
+            return;
+        }
+
+        // Apply the cooldown to the tiny preflight request, never after the
+        // multi-megabyte embedded map has already crossed the socket.
         if (!allowSocketEvent(socket, 'updateMapImage')) {
-            socket.emit('mapUpdateRejected', {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
                 code: 'MAP_RATE_LIMITED',
-                message: 'Map update was not sent. Please wait a moment and try again.',
+                message: 'A map was distributed recently. Please wait before loading another.',
                 retryAfterMs: getSocketEventRetryAfterMs(socket, 'updateMapImage')
             });
             return;
         }
-        if (!isImageSourceWithinLimit(mapSrcString)) return;
-        
+
+        const request = sanitizeMapTransferRequest(payload);
+        const transferId = createMapTransferId();
+        const transfer = {
+            transferId,
+            dmSocketId: socket.id,
+            reason: request.reason,
+            loadId: request.loadId,
+            phase: 'reserved',
+            pendingPlayerSocketIds: new Set(),
+            expiresAt: Date.now() + MAP_TRANSFER_RESERVATION_TIMEOUT_MS,
+            reservationTimer: null,
+            completionTimer: null
+        };
+
+        transfer.reservationTimer = setTimeout(() => {
+            const currentState = roomCampaignStates[currentRoom];
+            if (!currentState || currentState.mapTransfer !== transfer) return;
+            clearRoomMapTransfer(currentRoom, 'reservation-timeout');
+        }, MAP_TRANSFER_RESERVATION_TIMEOUT_MS);
+
+        state.mapTransfer = transfer;
+        if (typeof acknowledge === 'function') acknowledge({
+            ok: true,
+            transferId,
+            expiresInMs: MAP_TRANSFER_RESERVATION_TIMEOUT_MS
+        });
+    });
+
+    socket.on('cancelMapTransfer', (payload) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        const state = roomCampaignStates[currentRoom];
+        const transfer = state.mapTransfer;
+        if (!transfer || transfer.dmSocketId !== socket.id) return;
+        if (!payload || String(payload.transferId || '') !== transfer.transferId) return;
+        clearRoomMapTransfer(currentRoom, 'cancelled');
+    });
+
+    socket.on('submitMapTransfer', (payload, acknowledge) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'ROOM_UNAVAILABLE',
+                message: 'The table is not available for a map transfer.'
+            });
+            return;
+        }
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        const transfer = state.mapTransfer;
+        const transferId = payload && String(payload.transferId || '');
+        const mapSrcString = payload && payload.mapSrc;
+
+        if (!player || !player.isDM) {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'DM_AUTHORITY_REQUIRED',
+                message: 'Only the Dungeon Master may send a map.'
+            });
+            return;
+        }
+
+        if (
+            !transfer ||
+            transfer.dmSocketId !== socket.id ||
+            transfer.transferId !== transferId ||
+            transfer.phase !== 'reserved'
+        ) {
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'MAP_TRANSFER_GRANT_REQUIRED',
+                message: 'The map transfer grant expired. Please try again.'
+            });
+            return;
+        }
+
+        if (typeof mapSrcString !== 'string' || !isImageSourceWithinLimit(mapSrcString)) {
+            clearRoomMapTransfer(currentRoom, 'invalid-map-source');
+            if (typeof acknowledge === 'function') acknowledge({
+                ok: false,
+                code: 'MAP_TRANSFER_INVALID_SOURCE',
+                message: 'Map image exceeds maximum supported size.'
+            });
+            return;
+        }
+
+        if (transfer.reservationTimer) clearTimeout(transfer.reservationTimer);
+        transfer.reservationTimer = null;
+        transfer.phase = 'broadcasting';
+        transfer.pendingPlayerSocketIds = new Set(
+            state.players
+                .filter(activePlayer => !activePlayer.isDM && activePlayer.socketId !== socket.id)
+                .map(activePlayer => activePlayer.socketId)
+        );
+        transfer.expiresAt = Date.now() + MAP_TRANSFER_COMPLETION_TIMEOUT_MS;
+        transfer.completionTimer = setTimeout(() => {
+            const currentState = roomCampaignStates[currentRoom];
+            if (!currentState || currentState.mapTransfer !== transfer) return;
+            clearRoomMapTransfer(currentRoom, 'completion-timeout');
+        }, MAP_TRANSFER_COMPLETION_TIMEOUT_MS);
+
         state.mapSrc = mapSrcString;
 
         if (state.fowEnabled || state.isDarknessActive || (Array.isArray(state.fowPolygons) && state.fowPolygons.length > 0)) {
@@ -945,7 +1142,42 @@ io.on('connection', (socket) => {
             });
         }
 
-        socket.to(currentRoom).emit('syncMap', mapSrcString);
+        socket.to(currentRoom).emit('syncMap', mapSrcString, { transferId });
+
+        if (typeof acknowledge === 'function') acknowledge({
+            ok: true,
+            transferId,
+            pendingPlayers: transfer.pendingPlayerSocketIds.size
+        });
+
+        maybeCompleteRoomMapTransfer(currentRoom);
+    });
+
+    socket.on('mapTransferClientComplete', (payload) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        const state = roomCampaignStates[currentRoom];
+        const transfer = state.mapTransfer;
+        if (!transfer || transfer.phase !== 'broadcasting') return;
+        if (!payload || String(payload.transferId || '') !== transfer.transferId) return;
+
+        transfer.pendingPlayerSocketIds.delete(socket.id);
+        maybeCompleteRoomMapTransfer(currentRoom);
+    });
+
+    // Legacy/stale clients may still send the large payload without a grant.
+    // Never fan that payload out to the room; require the preflight protocol.
+    socket.on('updateMapImage', (mapSrcString) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (typeof mapSrcString !== 'string') return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) return;
+
+        socket.emit('mapUpdateRejected', {
+            code: 'MAP_TRANSFER_GRANT_REQUIRED',
+            message: 'Refresh Dungeons ’85 before sending another map.'
+        });
     });
 
     socket.on('updateNotes', (notes) => {
@@ -1142,6 +1374,7 @@ io.on('connection', (socket) => {
 
         if (currentRoom && roomCampaignStates[currentRoom]) {
             const state = roomCampaignStates[currentRoom];
+            releaseSocketFromRoomMapTransfer(currentRoom, socket.id);
             const departingPlayer = state.players.find(p => p.socketId === socket.id);
             if (departingPlayer && departingPlayer.isDM) {
                 captureDmSeatRecord(state, departingPlayer);
