@@ -1,0 +1,13 @@
+{
+  "name": "bugbear-barbeque",
+  "version": "9.7.3.4.9.5",
+  "description": "Minimalist Central Server VTT Engine",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
