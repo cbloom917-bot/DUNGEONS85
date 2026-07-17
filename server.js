@@ -274,8 +274,25 @@ function replacePeerIdInRoomState(state, oldPeerId, newPeerId) {
 io.on('connection', (socket) => {
     let currentRoom = null;
 
-    socket.on('joinRoom', (data) => {
-        if (!data || typeof data !== 'object') return;
+    socket.on('joinRoom', (data, acknowledge) => {
+        let joinResponseSent = false;
+
+        const respond = (payload) => {
+            if (joinResponseSent) return;
+            joinResponseSent = true;
+            if (typeof acknowledge === 'function') acknowledge(payload);
+        };
+
+        const rejectJoin = (code, message) => {
+            const payload = { ok: false, code, message };
+            socket.emit('joinError', payload);
+            respond(payload);
+        };
+
+        if (!data || typeof data !== 'object') {
+            rejectJoin('INVALID_JOIN_PAYLOAD', 'Invalid room, player name, or peer identity format.');
+            return;
+        }
 
         let { roomName, playerName, isDM, peerId } = data;
 
@@ -285,7 +302,7 @@ io.on('connection', (socket) => {
             typeof peerId !== 'string' ||
             !peerId.trim()
         ) {
-            socket.emit('joinError', 'Invalid room, player name, or peer identity format.');
+            rejectJoin('INVALID_JOIN_PAYLOAD', 'Invalid room, player name, or peer identity format.');
             return;
         }
 
@@ -298,7 +315,10 @@ io.on('connection', (socket) => {
 
         if (!roomCampaignStates[requestedRoom]) {
             if (!isDM) {
-                socket.emit('joinError', 'That room does not exist. Please check the name or wait for the DM to start the table.');
+                rejectJoin(
+                    'ROOM_NOT_FOUND',
+                    'That room does not exist. Please check the name or wait for the DM to start the table.'
+                );
                 return;
             }
             roomCampaignStates[requestedRoom] = {
@@ -318,15 +338,18 @@ io.on('connection', (socket) => {
         }
 
         const emitDmSeatConflict = () => {
-            socket.emit('joinError', {
-                code: 'DM_SEAT_CONFLICT',
-                message: 'This table already has a Dungeon Master. Please join as a player.'
-            });
+            rejectJoin(
+                'DM_SEAT_CONFLICT',
+                'This table already has a Dungeon Master. Please join as a player.'
+            );
         };
 
         const admitSocket = (displacedDM = null) => {
             const state = roomCampaignStates[requestedRoom];
-            if (!state) return;
+            if (!state) {
+                rejectJoin('ROOM_UNAVAILABLE', 'The table became unavailable while reconnecting. Please try again.');
+                return;
+            }
 
             const displacedPeerId = displacedDM ? String(displacedDM.peerId || '') : '';
 
@@ -415,6 +438,15 @@ io.on('connection', (socket) => {
             } else if (!joinedPlayer.isDM && !isSeatReclaim) {
                 io.to(currentRoom).emit('playerNotification', `${joinedPlayer.name} HAS JOINED THE TABLE`);
             }
+
+            respond({
+                ok: true,
+                roomName: requestedRoom,
+                peerId: joinedPlayer.peerId,
+                socketId: socket.id,
+                reclaimed: Boolean(preservedSeat),
+                isDM: joinedPlayer.isDM
+            });
         };
 
         const state = roomCampaignStates[requestedRoom];
@@ -442,7 +474,10 @@ io.on('connection', (socket) => {
         // ping timeout expires. Probe the browser before treating the seat as live.
         occupyingDmSocket.timeout(2000).emit('seatProbe', (err) => {
             const currentState = roomCampaignStates[requestedRoom];
-            if (!currentState) return;
+            if (!currentState) {
+                rejectJoin('ROOM_UNAVAILABLE', 'The table became unavailable while checking the DM seat.');
+                return;
+            }
 
             const currentDM = currentState.players.find(player => player.isDM === true && String(player.peerId) !== peerId);
             if (!currentDM) {
