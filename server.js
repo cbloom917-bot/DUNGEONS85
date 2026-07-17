@@ -389,13 +389,17 @@ io.on('connection', (socket) => {
             socket.join(requestedRoom);
             currentRoom = requestedRoom;
 
+            // A zombie-DM takeover creates a new browser/media lifecycle. Never
+            // advertise the displaced browser's stale media flags on the reclaimed
+            // seat; the returning DM intentionally joins muted with camera off.
+            const resetDisplacedMediaState = Boolean(displacedDM);
             const joinedPlayer = {
                 socketId: socket.id,
                 peerId,
                 name: preservedSeat ? preservedSeat.name : playerName,
                 isDM: effectiveIsDM,
-                micEnabled: preservedSeat ? Boolean(preservedSeat.micEnabled) : false,
-                camEnabled: preservedSeat ? Boolean(preservedSeat.camEnabled) : false
+                micEnabled: resetDisplacedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.micEnabled) : false),
+                camEnabled: resetDisplacedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.camEnabled) : false)
             };
             state.players.push(joinedPlayer);
 
@@ -820,6 +824,56 @@ io.on('connection', (socket) => {
         io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId);
     });
 
+
+    socket.on('endInitiativeAndRestoreOrder', (peerOrder, acknowledge) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) {
+            if (typeof acknowledge === 'function') acknowledge({ ok: false, code: 'ROOM_UNAVAILABLE' });
+            return;
+        }
+        if (!Array.isArray(peerOrder)) {
+            if (typeof acknowledge === 'function') acknowledge({ ok: false, code: 'INVALID_VIDEO_ORDER' });
+            return;
+        }
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(p => p.socketId === socket.id);
+        if (!player || !player.isDM) {
+            if (typeof acknowledge === 'function') acknowledge({ ok: false, code: 'DM_AUTHORITY_REQUIRED' });
+            return;
+        }
+
+        const activePeerIds = new Set(state.players.map(p => String(p.peerId)));
+        const seen = new Set();
+        const restoredOrder = peerOrder
+            .map(peerId => String(peerId))
+            .filter(peerId => {
+                if (!activePeerIds.has(peerId) || seen.has(peerId)) return false;
+                seen.add(peerId);
+                return true;
+            });
+
+        // Preserve any participant that joined after combat began by appending it
+        // rather than dropping it from the restored exploration order.
+        state.players.forEach(activePlayer => {
+            const peerId = String(activePlayer.peerId);
+            if (!seen.has(peerId)) {
+                seen.add(peerId);
+                restoredOrder.push(peerId);
+            }
+        });
+
+        state.initiativePeerId = null;
+        state.videoOrder = restoredOrder;
+
+        // Broadcast the restored order and cleared spotlight from one authoritative
+        // transaction so a stale combat-order event cannot win the first end-combat.
+        io.to(currentRoom).emit('syncVideoOrder', state.videoOrder);
+        io.to(currentRoom).emit('syncInitiativeSpotlight', null);
+
+        if (typeof acknowledge === 'function') {
+            acknowledge({ ok: true, peerOrder: state.videoOrder });
+        }
+    });
 
     socket.on('setVideoOrder', (peerOrder) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;

@@ -32,7 +32,7 @@
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title" id="version-display">VERSION 9.7.3.4.10 PUBLIC BETA</div>
+            <div class="login-title" id="version-display">VERSION 9.7.3.4.10.1 PUBLIC BETA</div>
             <div class="toggle-container">
     			<button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false);">PLAYER (JOIN)</button>
     			<button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true);">DM (HOST)</button>
@@ -119,7 +119,9 @@
         <div class="tool-row import-export-row">
             <label class="tool-btn" style="cursor: pointer;">
                 Import
-                <input type="file" accept=".d85" style="display: none;" onchange="importD85Module(this.files[0])">
+                <input id="d85-import-input" type="file" accept=".d85" style="display: none;"
+                       onclick="this.value = ''"
+                       onchange="importD85Module(this.files[0], this)">
             </label>
             <button onclick="exportTableState()" class="tool-btn">Export</button>
         </div>
