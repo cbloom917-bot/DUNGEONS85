@@ -115,6 +115,22 @@ function allowSocketEvent(socket, eventName) {
     return current.count <= limit.max;
 }
 
+function getSocketEventRetryAfterMs(socket, eventName) {
+    const limit = RATE_LIMITS[eventName];
+    const current = socket.data.rateLimits && socket.data.rateLimits[eventName];
+    if (!limit || !current) return 0;
+
+    return Math.max(0, limit.windowMs - (Date.now() - current.windowStart));
+}
+
+function sanitizeDungeonLoadSignal(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const loadId = String(payload.loadId || '').trim();
+    if (!loadId || loadId.length > 80) return null;
+    return { loadId };
+}
+
 app.get('/community-stats', (req, res) => {
     res.json({
         ...communityStats,
@@ -887,6 +903,21 @@ io.on('connection', (socket) => {
         }
     });
 
+    ['dungeonLoadStarted', 'dungeonLoadComplete', 'dungeonLoadFailed'].forEach((eventName) => {
+        socket.on(eventName, (payload) => {
+            if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+
+            const state = roomCampaignStates[currentRoom];
+            const player = state.players.find(p => p.socketId === socket.id);
+            if (!player || !player.isDM) return;
+
+            const signal = sanitizeDungeonLoadSignal(payload);
+            if (!signal) return;
+
+            socket.to(currentRoom).emit(eventName, signal);
+        });
+    });
+
     socket.on('updateMapImage', (mapSrcString) => {
         if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (typeof mapSrcString !== 'string') return;
@@ -894,7 +925,14 @@ io.on('connection', (socket) => {
         const state = roomCampaignStates[currentRoom];
         const player = state.players.find(p => p.socketId === socket.id);
         if (!player || !player.isDM) return;
-        if (!allowSocketEvent(socket, 'updateMapImage')) return;
+        if (!allowSocketEvent(socket, 'updateMapImage')) {
+            socket.emit('mapUpdateRejected', {
+                code: 'MAP_RATE_LIMITED',
+                message: 'Map update was not sent. Please wait a moment and try again.',
+                retryAfterMs: getSocketEventRetryAfterMs(socket, 'updateMapImage')
+            });
+            return;
+        }
         if (!isImageSourceWithinLimit(mapSrcString)) return;
         
         state.mapSrc = mapSrcString;
