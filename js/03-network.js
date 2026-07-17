@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.11 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.11.1 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -21,13 +21,17 @@ const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
 const PEER_HARD_RECOVERY_DELAY_MS = 14000;
 const PEER_HARD_RECOVERY_FAILURE_THRESHOLD = 2;
 const REMOTE_DUNGEON_LOAD_TIMEOUT_MS = 60000;
+const MAP_TRANSFER_REQUEST_ACK_TIMEOUT_MS = 8000;
+const MAP_TRANSFER_SUBMIT_ACK_TIMEOUT_MS = 120000;
 
 let remoteDungeonLoadGeneration = 0;
 let activeRemoteDungeonLoadId = null;
 let remoteDungeonLoadTimeout = null;
 let remoteDungeonLoadCompleteReceived = false;
 let remoteDungeonMapDecodePending = false;
-let mapUpdateRejectionSequence = 0;
+let activeMapTransferId = null;
+let mapTransferRequestInProgress = false;
+let mapTransferClientGeneration = 0;
 
 function getDungeonLoadId(payload) {
     if (!payload || typeof payload !== 'object') return '';
@@ -111,6 +115,189 @@ function resetRemoteDungeonLoadState() {
     remoteDungeonLoadCompleteReceived = false;
     remoteDungeonMapDecodePending = false;
     if (!tableState.isDM) hideLoading();
+}
+
+function getMapTransferId(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    return String(payload.transferId || '').trim();
+}
+
+function getMapTransferFailureMessage(payload) {
+    if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+        return payload.message.trim();
+    }
+    return 'A map is still being distributed. Please wait before loading another.';
+}
+
+function isMapTransferBusy() {
+    return Boolean(mapTransferRequestInProgress || activeMapTransferId);
+}
+
+function resetLocalMapTransferState() {
+    mapTransferClientGeneration += 1;
+    mapTransferRequestInProgress = false;
+    activeMapTransferId = null;
+}
+
+function notifyMapTransferFailure(payload, { silent = false } = {}) {
+    const failure = payload && typeof payload === 'object' ? payload : {};
+    const message = getMapTransferFailureMessage(failure);
+    debugWarn(`DEBUG: ${message}`, failure);
+    if (!silent) alert(message);
+    return {
+        ok: false,
+        code: String(failure.code || 'MAP_TRANSFER_REJECTED'),
+        message,
+        retryAfterMs: Math.max(0, Number(failure.retryAfterMs) || 0)
+    };
+}
+
+function requestMapTransferGrant({ reason = 'map-update', loadId = '', silent = false } = {}) {
+    if (!tableState.isDM || !socket || !socket.connected || !socketSeatConfirmed) {
+        return Promise.resolve(notifyMapTransferFailure({
+            code: 'MAP_TRANSFER_UNAVAILABLE',
+            message: 'The map could not be sent because the table connection is not ready.'
+        }, { silent }));
+    }
+
+    if (isMapTransferBusy()) {
+        return Promise.resolve(notifyMapTransferFailure({
+            code: 'MAP_TRANSFER_BUSY',
+            message: 'A map is still being distributed. Please wait before loading another.'
+        }, { silent }));
+    }
+
+    mapTransferRequestInProgress = true;
+    const generation = mapTransferClientGeneration;
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const settle = (result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            if (generation === mapTransferClientGeneration) {
+                mapTransferRequestInProgress = false;
+            }
+            resolve(result);
+        };
+
+        const timeout = setTimeout(() => {
+            settle(notifyMapTransferFailure({
+                code: 'MAP_TRANSFER_REQUEST_TIMEOUT',
+                message: 'The map transfer request timed out. Please try again.'
+            }, { silent }));
+        }, MAP_TRANSFER_REQUEST_ACK_TIMEOUT_MS);
+
+        socket.emit('requestMapTransfer', {
+            reason: String(reason || 'map-update').slice(0, 40),
+            loadId: String(loadId || '').slice(0, 80)
+        }, (response) => {
+            if (generation !== mapTransferClientGeneration) {
+                settle({ ok: false, code: 'MAP_TRANSFER_CONNECTION_RESET' });
+                return;
+            }
+
+            if (!response || response.ok !== true || !getMapTransferId(response)) {
+                settle(notifyMapTransferFailure(response, { silent }));
+                return;
+            }
+
+            activeMapTransferId = getMapTransferId(response);
+            settle({ ...response, transferId: activeMapTransferId, ok: true });
+        });
+    });
+}
+
+function submitGrantedMapTransfer(transferId, mapSrc, { silent = false } = {}) {
+    const generation = mapTransferClientGeneration;
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const settle = (result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve(result);
+        };
+
+        const timeout = setTimeout(() => {
+            if (activeMapTransferId === transferId) activeMapTransferId = null;
+            settle(notifyMapTransferFailure({
+                code: 'MAP_TRANSFER_SUBMIT_TIMEOUT',
+                message: 'The map transfer timed out before the server accepted it. Please try again.'
+            }, { silent }));
+        }, MAP_TRANSFER_SUBMIT_ACK_TIMEOUT_MS);
+
+        socket.emit('submitMapTransfer', { transferId, mapSrc }, (response) => {
+            if (generation !== mapTransferClientGeneration) {
+                settle({ ok: false, code: 'MAP_TRANSFER_CONNECTION_RESET' });
+                return;
+            }
+
+            if (!response || response.ok !== true) {
+                if (activeMapTransferId === transferId) activeMapTransferId = null;
+                settle(notifyMapTransferFailure(response, { silent }));
+                return;
+            }
+
+            settle({ ...response, transferId, ok: true });
+        });
+    });
+}
+
+async function sendMapUpdateWithBackpressure(mapSrc, options = {}) {
+    if (typeof mapSrc !== 'string' || mapSrc.length > MAX_IMAGE_DATA_URL_LENGTH) {
+        return notifyMapTransferFailure({
+            code: 'MAP_TRANSFER_INVALID_SOURCE',
+            message: 'Map image exceeds maximum supported size.'
+        }, { silent: Boolean(options.silent) });
+    }
+
+    const grant = await requestMapTransferGrant(options);
+    if (!grant.ok) return grant;
+
+    try {
+        if (typeof options.beforeSend === 'function') {
+            await options.beforeSend(grant);
+        }
+    } catch (err) {
+        if (socket && socket.connected) socket.emit('cancelMapTransfer', { transferId: grant.transferId });
+        if (activeMapTransferId === grant.transferId) activeMapTransferId = null;
+        debugError('DEBUG: Map pre-send step failed:', err);
+        return notifyMapTransferFailure({
+            code: 'MAP_TRANSFER_PREPARE_FAILED',
+            message: 'The map could not be prepared for transfer.'
+        }, { silent: Boolean(options.silent) });
+    }
+
+    return submitGrantedMapTransfer(grant.transferId, mapSrc, options);
+}
+
+function acknowledgeMapTransfer(transferId) {
+    if (tableState.isDM || !socket || !socket.connected || !transferId) return;
+    socket.emit('mapTransferClientComplete', { transferId });
+}
+
+function republishCurrentMapAfterReconnect(attempt = 0) {
+    if (!tableState.isDM || !tableState.mapSrc) return;
+    const mapSrc = tableState.mapSrc;
+
+    sendMapUpdateWithBackpressure(mapSrc, {
+        reason: 'reconnect-republish',
+        silent: true,
+        beforeSend: () => broadcastFoW()
+    }).then((result) => {
+        if (result && result.ok) return;
+        if (attempt >= 1 || tableState.mapSrc !== mapSrc) return;
+
+        const retryAfterMs = Math.max(1000, Number(result && result.retryAfterMs) || 1500);
+        setTimeout(() => {
+            if (tableState.isDM && tableState.mapSrc === mapSrc && socket && socket.connected) {
+                republishCurrentMapAfterReconnect(attempt + 1);
+            }
+        }, Math.min(retryAfterMs, 10000));
+    });
 }
 
 
@@ -773,6 +960,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         // Debug-only reconnect diagnostics. These stay gated by D85_DEBUG_LOGS.
         socket.on('disconnect', (reason) => {
+            resetLocalMapTransferState();
             socketSeatConfirmed = false;
             latestPlayerListHasLocalSeat = false;
             reconnectRecoveryPending = false;
@@ -915,8 +1103,10 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
 
-        socket.on('syncMap', (mapSrc) => {
+        socket.on('syncMap', (mapSrc, transferPayload = null) => {
             if (typeof mapSrc !== 'string') return;
+
+            const incomingMapTransferId = getMapTransferId(transferPayload);
 
             const remoteLoadId = activeRemoteDungeonLoadId;
             const remoteLoadGeneration = remoteDungeonLoadGeneration;
@@ -931,6 +1121,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                     maybeCloseRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration);
                 }
                 draw();
+                acknowledgeMapTransfer(incomingMapTransferId);
                 return;
             }
 
@@ -940,7 +1131,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             // Re-publish the GM's current local map instead.
             if (tableState.isDM && hasReceivedInitialMapSync && tableState.mapSrc) {
                 debugWarn("DEBUG: Ignoring syncMap after GM reconnect to protect local map state.");
-                socket.emit('updateMapImage', tableState.mapSrc);
+                republishCurrentMapAfterReconnect();
                 return;
             }
 
@@ -966,6 +1157,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                     debugError("DEBUG: Incoming map image failed to load:", err);
                 })
                 .finally(() => {
+                    acknowledgeMapTransfer(incomingMapTransferId);
                     if (tableState.isDM) return;
 
                     if (belongsToRemoteDungeonLoad) {
@@ -1094,15 +1286,18 @@ function initHybridMediaVttStack(roomName, playerName) {
             failRemoteDungeonLoad(payload);
         });
 
+        socket.on('mapTransferReleased', (payload) => {
+            if (!tableState.isDM) return;
+            const transferId = getMapTransferId(payload);
+            if (!transferId || transferId !== activeMapTransferId) return;
+            activeMapTransferId = null;
+            debugLog(`DEBUG: Map transfer released (${String(payload.reason || 'complete')}).`);
+        });
+
+        // Compatibility guard for stale clients or rejected legacy updateMapImage calls.
         socket.on('mapUpdateRejected', (payload) => {
-            if (!tableState.isDM || !payload || payload.code !== 'MAP_RATE_LIMITED') return;
-
-            mapUpdateRejectionSequence += 1;
-            markTableDirty();
-
-            const message = String(payload.message || 'Map update was not sent. Please wait a moment and try again.');
-            debugWarn(`DEBUG: ${message}`, payload);
-            alert(message);
+            if (!tableState.isDM || !payload) return;
+            notifyMapTransferFailure(payload);
         });
 
         socket.on('playerNotification', (msg) => {

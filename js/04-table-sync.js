@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.11 — 04-table-sync.js
+// Dungeons '85 Public Beta 9.7.3.4.11.1 — 04-table-sync.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -19,20 +19,24 @@ function broadcastFoW() {
             darkness: tableState.isDarknessActive 
         });
     }
-function broadcastFullTableState() {
-        if (!tableState.isDM || !socket) return;
+async function broadcastFullTableState({ reason = 'full-table-state', loadId = '' } = {}) {
+        if (!tableState.isDM || !socket) {
+            return { ok: false, code: 'MAP_TRANSFER_UNAVAILABLE' };
+        }
 
-        // Send fog state before the map so players never draw a freshly imported
-        // dungeon map uncovered for a frame while Fog of War catches up.
-        broadcastFoW();
-
-        // Always publish the map state. An empty string actively clears any
-        // previously stored map for current players and future joins.
-        socket.emit('updateMapImage', tableState.mapSrc || '');
+        // Reserve the map lane before any imported table state is sent. Once the
+        // server grants it, send Fog first and only then submit the large map.
+        const mapResult = await sendMapUpdateWithBackpressure(tableState.mapSrc || '', {
+            reason,
+            loadId,
+            beforeSend: () => broadcastFoW()
+        });
+        if (!mapResult.ok) return mapResult;
 
         broadcastTokensMatrixChange();
         broadcastNotes();
         broadcastSketches();
+        return mapResult;
     }
 
 function toggleFogMode() {

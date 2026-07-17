@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.11 — 01-assets.js
+// Dungeons '85 Public Beta 9.7.3.4.11.1 — 01-assets.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -114,6 +114,11 @@ async function loadCloudImage(src) {
 function selectLocalFile(mode, spawnPoint = null) {
     if (!tableState.isDM) return;
 
+    if (mode === 'MAP' && typeof isMapTransferBusy === 'function' && isMapTransferBusy()) {
+        alert('A map is still being distributed. Please wait before loading another.');
+        return;
+    }
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -125,7 +130,7 @@ function selectLocalFile(mode, spawnPoint = null) {
         showLoading("PROCESSING ASSET...");
 
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
             const dataUrl = event.target.result;
 
             if (typeof dataUrl !== 'string' || dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
@@ -135,9 +140,16 @@ function selectLocalFile(mode, spawnPoint = null) {
             }
 
             if (mode === 'MAP') {
+                const mapResult = await sendMapUpdateWithBackpressure(dataUrl, {
+                    reason: 'direct-map-load'
+                });
+                if (!mapResult.ok) {
+                    hideLoading();
+                    return;
+                }
+
                 tableState.mapSrc = dataUrl;
                 markTableDirty();
-                if (socket) socket.emit('updateMapImage', dataUrl);
             } else {
                 const tokenX = spawnPoint && Number.isFinite(Number(spawnPoint.x))
                     ? Number(spawnPoint.x)

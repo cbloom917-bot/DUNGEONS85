@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.11 — 09-persistence.js
+// Dungeons '85 Public Beta 9.7.3.4.11.1 — 09-persistence.js
 // Ordered client module. Preserve script load order in index.html.
 
 function sanitizeFilenamePart(value) {
@@ -182,6 +182,11 @@ async function importD85Module(file, inputElement = null) {
         return;
     }
 
+    if (typeof isMapTransferBusy === 'function' && isMapTransferBusy()) {
+        alert('A map is still being distributed. Please wait before loading another.');
+        return;
+    }
+
     const loadId = createDungeonLoadId();
     let loadSignalFinished = false;
     let localImportFinished = false;
@@ -222,14 +227,25 @@ async function importD85Module(file, inputElement = null) {
                 { to: 'string' }
             );
 
+            const previousTableState = tableState;
             tableState = sanitizeImportedTableState(JSON.parse(decompressed));
             if (tableState.isDM) updateFogUI();
 
-            const mapRejectionSequenceAtBroadcast = mapUpdateRejectionSequence;
-
-            // Broadcast sanitized state immediately. Fog remains first inside
-            // broadcastFullTableState(), while local image decoding continues.
-            broadcastFullTableState();
+            // Reserve the one-at-a-time map lane before publishing any imported
+            // table state. If another transfer is active, restore the prior local
+            // table and close the players' import overlays without partial sync.
+            const broadcastResult = await broadcastFullTableState({
+                reason: 'd85-import',
+                loadId
+            });
+            if (!broadcastResult.ok) {
+                tableState = previousTableState;
+                if (tableState.isDM) updateFogUI();
+                draw();
+                finishLoadSignal('dungeonLoadFailed');
+                finishLocalImport();
+                return;
+            }
 
             const uniqueImageSources = new Set();
             if (tableState.mapSrc) uniqueImageSources.add(tableState.mapSrc);
@@ -252,16 +268,10 @@ async function importD85Module(file, inputElement = null) {
             if (tableState.mapSrc) centerMapInView();
             draw();
 
-            const mapUpdateWasRejected = mapUpdateRejectionSequence !== mapRejectionSequenceAtBroadcast;
-            if (mapUpdateWasRejected) {
-                markTableDirty();
-            } else {
-                markTableSaved();
-            }
-
+            markTableSaved();
             finishLoadSignal('dungeonLoadComplete');
             finishLocalImport();
-            if (!mapUpdateWasRejected) alert('.d85 File loaded successfully!');
+            alert('.d85 File loaded successfully!');
         } catch (err) {
             failImport(err);
         }

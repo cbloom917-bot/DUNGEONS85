@@ -432,14 +432,18 @@ function executeContextSpawnToken() {
     }
 
 
-function executeContextClearMap() {
+async function executeContextClearMap() {
         hideContextMenu();
         if (!tableState.isDM || !tableState.mapSrc) return;
         if (!confirm('Clear the current map?')) return;
 
+        const mapResult = await sendMapUpdateWithBackpressure('', {
+            reason: 'clear-map'
+        });
+        if (!mapResult.ok) return;
+
         tableState.mapSrc = null;
         markTableDirty();
-        if (socket) socket.emit('updateMapImage', '');
         draw();
     }
 
