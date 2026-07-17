@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.10.2 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.11 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -20,6 +20,99 @@ let pendingIdentityReplacementVideoOrder = null;
 const PEER_MEDIA_RECOVERY_DELAYS_MS = [250, 2000, 5000, 9000];
 const PEER_HARD_RECOVERY_DELAY_MS = 14000;
 const PEER_HARD_RECOVERY_FAILURE_THRESHOLD = 2;
+const REMOTE_DUNGEON_LOAD_TIMEOUT_MS = 60000;
+
+let remoteDungeonLoadGeneration = 0;
+let activeRemoteDungeonLoadId = null;
+let remoteDungeonLoadTimeout = null;
+let remoteDungeonLoadCompleteReceived = false;
+let remoteDungeonMapDecodePending = false;
+let mapUpdateRejectionSequence = 0;
+
+function getDungeonLoadId(payload) {
+    if (!payload || typeof payload !== 'object') return '';
+    return String(payload.loadId || '').trim();
+}
+
+function clearRemoteDungeonLoadTimeout() {
+    if (!remoteDungeonLoadTimeout) return;
+    clearTimeout(remoteDungeonLoadTimeout);
+    remoteDungeonLoadTimeout = null;
+}
+
+function isCurrentRemoteDungeonLoad(loadId, generation) {
+    return Boolean(
+        activeRemoteDungeonLoadId &&
+        generation === remoteDungeonLoadGeneration &&
+        String(loadId || '') === activeRemoteDungeonLoadId
+    );
+}
+
+function closeRemoteDungeonLoad(loadId, generation) {
+    if (tableState.isDM || !isCurrentRemoteDungeonLoad(loadId, generation)) return;
+
+    clearRemoteDungeonLoadTimeout();
+    activeRemoteDungeonLoadId = null;
+    remoteDungeonLoadCompleteReceived = false;
+    remoteDungeonMapDecodePending = false;
+    hideLoading();
+}
+
+function maybeCloseRemoteDungeonLoad(loadId, generation) {
+    if (!isCurrentRemoteDungeonLoad(loadId, generation)) return;
+    if (!remoteDungeonLoadCompleteReceived || remoteDungeonMapDecodePending) return;
+    closeRemoteDungeonLoad(loadId, generation);
+}
+
+function beginRemoteDungeonLoad(payload) {
+    if (tableState.isDM) return;
+
+    const loadId = getDungeonLoadId(payload);
+    if (!loadId) return;
+
+    clearRemoteDungeonLoadTimeout();
+    remoteDungeonLoadGeneration += 1;
+    activeRemoteDungeonLoadId = loadId;
+    remoteDungeonLoadCompleteReceived = false;
+    remoteDungeonMapDecodePending = false;
+
+    const generation = remoteDungeonLoadGeneration;
+    showDungeonLoading();
+
+    remoteDungeonLoadTimeout = setTimeout(() => {
+        if (!isCurrentRemoteDungeonLoad(loadId, generation)) return;
+        debugWarn(`DEBUG: Player dungeon-loading overlay timed out for ${loadId}.`);
+        closeRemoteDungeonLoad(loadId, generation);
+    }, REMOTE_DUNGEON_LOAD_TIMEOUT_MS);
+}
+
+function completeRemoteDungeonLoad(payload) {
+    if (tableState.isDM) return;
+
+    const loadId = getDungeonLoadId(payload);
+    const generation = remoteDungeonLoadGeneration;
+    if (!isCurrentRemoteDungeonLoad(loadId, generation)) return;
+
+    remoteDungeonLoadCompleteReceived = true;
+    maybeCloseRemoteDungeonLoad(loadId, generation);
+}
+
+function failRemoteDungeonLoad(payload) {
+    if (tableState.isDM) return;
+
+    const loadId = getDungeonLoadId(payload);
+    closeRemoteDungeonLoad(loadId, remoteDungeonLoadGeneration);
+}
+
+function resetRemoteDungeonLoadState() {
+    clearRemoteDungeonLoadTimeout();
+    remoteDungeonLoadGeneration += 1;
+    activeRemoteDungeonLoadId = null;
+    remoteDungeonLoadCompleteReceived = false;
+    remoteDungeonMapDecodePending = false;
+    if (!tableState.isDM) hideLoading();
+}
+
 
 function clearPeerMediaRecoveryTimers() {
     peerMediaRecoveryTimers.forEach(timer => clearTimeout(timer));
@@ -305,6 +398,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     socketSeatConfirmed = false;
     pendingPeerHardRecoveryReason = null;
     pendingIdentityReplacementVideoOrder = null;
+    resetRemoteDungeonLoadState();
     installNetworkRecoveryHooksOnce();
 
     if (socket) {
@@ -824,9 +918,18 @@ function initHybridMediaVttStack(roomName, playerName) {
         socket.on('syncMap', (mapSrc) => {
             if (typeof mapSrc !== 'string') return;
 
+            const remoteLoadId = activeRemoteDungeonLoadId;
+            const remoteLoadGeneration = remoteDungeonLoadGeneration;
+            const loadingGenerationAtSync = remoteDungeonLoadGeneration;
+            const belongsToRemoteDungeonLoad = Boolean(!tableState.isDM && remoteLoadId);
+
             if (!mapSrc) {
                 hasReceivedInitialMapSync = true;
                 tableState.mapSrc = null;
+                if (belongsToRemoteDungeonLoad && isCurrentRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration)) {
+                    remoteDungeonMapDecodePending = false;
+                    maybeCloseRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration);
+                }
                 draw();
                 return;
             }
@@ -844,21 +947,36 @@ function initHybridMediaVttStack(roomName, playerName) {
             hasReceivedInitialMapSync = true;
             tableState.mapSrc = mapSrc;
 
-            // Player-facing feedback only. This does not change sync order or delay
-            // map/token delivery; it simply uses the existing loading overlay while
-            // the incoming map image is decoded by the browser.
-            if (!tableState.isDM) showDungeonLoading();
+            if (!tableState.isDM) {
+                if (belongsToRemoteDungeonLoad) {
+                    remoteDungeonMapDecodePending = true;
+                } else {
+                    showDungeonLoading();
+                }
+            }
 
             loadCloudImage(mapSrc)
                 .then(() => {
+                    if (tableState.mapSrc !== mapSrc) return;
+                    if (belongsToRemoteDungeonLoad && !isCurrentRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration)) return;
                     centerMapInView();
                     draw();
                 })
                 .catch((err) => {
-                    console.error(err);
+                    debugError("DEBUG: Incoming map image failed to load:", err);
                 })
                 .finally(() => {
-                    if (!tableState.isDM) hideLoading();
+                    if (tableState.isDM) return;
+
+                    if (belongsToRemoteDungeonLoad) {
+                        if (!isCurrentRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration)) return;
+                        remoteDungeonMapDecodePending = false;
+                        maybeCloseRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration);
+                        return;
+                    }
+
+                    if (activeRemoteDungeonLoadId || remoteDungeonLoadGeneration !== loadingGenerationAtSync) return;
+                    hideLoading();
                 });
         });
 
@@ -878,7 +996,12 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             hasReceivedInitialTokenSync = true;
             tableState.tokens = serverTokens;
-            serverTokens.forEach(t => loadCloudImage(t.src).then(() => draw()));
+            serverTokens.forEach((token) => {
+                if (!token || !token.src) return;
+                loadCloudImage(token.src)
+                    .then(() => draw())
+                    .catch((err) => debugError("DEBUG: Synced token image failed to load:", err));
+            });
             draw();
         });
 
@@ -930,7 +1053,11 @@ function initHybridMediaVttStack(roomName, playerName) {
             if (tableState.tokens.some(t => String(t.id) === String(token.id))) return;
 
             tableState.tokens.push(token);
-            if (token.src) loadCloudImage(token.src).then(() => draw());
+            if (token.src) {
+                loadCloudImage(token.src)
+                    .then(() => draw())
+                    .catch((err) => debugError("DEBUG: Added token image failed to load:", err));
+            }
             if (tableState.isDM) markTableDirty();
             draw();
         });
@@ -953,6 +1080,29 @@ function initHybridMediaVttStack(roomName, playerName) {
                 data.screenX,
                 data.screenY
             );
+        });
+
+        socket.on('dungeonLoadStarted', (payload) => {
+            beginRemoteDungeonLoad(payload);
+        });
+
+        socket.on('dungeonLoadComplete', (payload) => {
+            completeRemoteDungeonLoad(payload);
+        });
+
+        socket.on('dungeonLoadFailed', (payload) => {
+            failRemoteDungeonLoad(payload);
+        });
+
+        socket.on('mapUpdateRejected', (payload) => {
+            if (!tableState.isDM || !payload || payload.code !== 'MAP_RATE_LIMITED') return;
+
+            mapUpdateRejectionSequence += 1;
+            markTableDirty();
+
+            const message = String(payload.message || 'Map update was not sent. Please wait a moment and try again.');
+            debugWarn(`DEBUG: ${message}`, payload);
+            alert(message);
         });
 
         socket.on('playerNotification', (msg) => {

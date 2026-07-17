@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.10.1 — 09-persistence.js
+// Dungeons '85 Public Beta 9.7.3.4.11 — 09-persistence.js
 // Ordered client module. Preserve script load order in index.html.
 
 function sanitizeFilenamePart(value) {
@@ -156,6 +156,15 @@ function exportTableState() {
 
 let d85ImportInProgress = false;
 
+function createDungeonLoadId() {
+    return `d85-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function emitDungeonLoadSignal(eventName, loadId) {
+    if (!socket || !socket.connected || !loadId) return;
+    socket.emit(eventName, { loadId });
+}
+
 async function importD85Module(file, inputElement = null) {
     // Capture the File object, then clear the browser input immediately. Browsers
     // otherwise suppress a second change event when the same physical file is
@@ -173,8 +182,36 @@ async function importD85Module(file, inputElement = null) {
         return;
     }
 
+    const loadId = createDungeonLoadId();
+    let loadSignalFinished = false;
+    let localImportFinished = false;
+
+    const finishLoadSignal = (eventName) => {
+        if (loadSignalFinished) return;
+        loadSignalFinished = true;
+        emitDungeonLoadSignal(eventName, loadId);
+    };
+
+    const finishLocalImport = () => {
+        if (localImportFinished) return false;
+        localImportFinished = true;
+        d85ImportInProgress = false;
+        if (inputElement) inputElement.value = '';
+        hideLoading();
+        return true;
+    };
+
+    const failImport = (error) => {
+        if (localImportFinished) return;
+        debugError('D85 Import Error:', error);
+        finishLoadSignal('dungeonLoadFailed');
+        finishLocalImport();
+        alert('Invalid .d85 file.');
+    };
+
     d85ImportInProgress = true;
     showDungeonLoading();
+    emitDungeonLoadSignal('dungeonLoadStarted', loadId);
 
     const reader = new FileReader();
 
@@ -186,59 +223,62 @@ async function importD85Module(file, inputElement = null) {
             );
 
             tableState = sanitizeImportedTableState(JSON.parse(decompressed));
+            if (tableState.isDM) updateFogUI();
 
-            const imagePromises = [];
+            const mapRejectionSequenceAtBroadcast = mapUpdateRejectionSequence;
 
-            if (tableState.mapSrc) {
-                imagePromises.push(loadCloudImage(tableState.mapSrc));
-            }
+            // Broadcast sanitized state immediately. Fog remains first inside
+            // broadcastFullTableState(), while local image decoding continues.
+            broadcastFullTableState();
 
-            if (Array.isArray(tableState.tokens)) {
-                tableState.tokens.forEach(token => {
-                    if (token.src) {
-                        imagePromises.push(loadCloudImage(token.src));
-                    }
-                });
-            }
+            const uniqueImageSources = new Set();
+            if (tableState.mapSrc) uniqueImageSources.add(tableState.mapSrc);
+            tableState.tokens.forEach((token) => {
+                if (token && token.src) uniqueImageSources.add(token.src);
+            });
 
-            await Promise.all(imagePromises);
+            const imageResults = await Promise.allSettled(
+                [...uniqueImageSources].map((src) => loadCloudImage(src))
+            );
+
+            imageResults.forEach((result) => {
+                if (result.status === 'rejected') {
+                    debugWarn('DEBUG: Imported image source could not be decoded:', result.reason);
+                }
+            });
+
             await new Promise(resolve => requestAnimationFrame(resolve));
 
             if (tableState.mapSrc) centerMapInView();
-            if (tableState.isDM) updateFogUI();
-
-            broadcastFullTableState();
-
             draw();
-            markTableSaved();
 
-            alert(".d85 File loaded successfully!");
+            const mapUpdateWasRejected = mapUpdateRejectionSequence !== mapRejectionSequenceAtBroadcast;
+            if (mapUpdateWasRejected) {
+                markTableDirty();
+            } else {
+                markTableSaved();
+            }
+
+            finishLoadSignal('dungeonLoadComplete');
+            finishLocalImport();
+            if (!mapUpdateWasRejected) alert('.d85 File loaded successfully!');
         } catch (err) {
-            console.error("D85 Import Error:", err);
-            alert("Invalid .d85 file.");
-        } finally {
-            d85ImportInProgress = false;
-            if (inputElement) inputElement.value = '';
-            hideLoading();
+            failImport(err);
         }
     };
 
     reader.onerror = () => {
-        d85ImportInProgress = false;
-        if (inputElement) inputElement.value = '';
-        hideLoading();
-        console.error('D85 Import Error: unable to read the selected file.');
-        alert('Invalid .d85 file.');
+        failImport(new Error('Unable to read the selected file.'));
+    };
+
+    reader.onabort = () => {
+        failImport(new Error('Reading the selected file was aborted.'));
     };
 
     try {
         reader.readAsArrayBuffer(file);
     } catch (err) {
-        d85ImportInProgress = false;
-        if (inputElement) inputElement.value = '';
-        hideLoading();
-        console.error('D85 Import Error:', err);
-        alert('Invalid .d85 file.');
+        failImport(err);
     }
 }
 

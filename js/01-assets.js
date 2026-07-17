@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.4 — 01-assets.js
+// Dungeons '85 Public Beta 9.7.3.4.11 — 01-assets.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -16,6 +16,7 @@ const DUNGEON_LOADING_MESSAGES = [
 
 let dungeonLoadingMessageTimer = null;
 let dungeonLoadingMessageIndex = 0;
+const imageLoadPromises = new Map();
 
 function setLoadingMessage(msg) {
     const loadingMsg = document.getElementById('loading-msg');
@@ -65,19 +66,49 @@ function hideLoading() {
     if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
+function describeImageSource(src) {
+    const value = String(src || '');
+    if (!value) return '[empty image source]';
+
+    if (value.startsWith('data:')) {
+        const commaIndex = value.indexOf(',');
+        const prefixEnd = commaIndex >= 0 ? Math.min(commaIndex + 1, 80) : 80;
+        return `${value.slice(0, prefixEnd)}… (${value.length} characters)`;
+    }
+
+    return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+}
+
 async function loadCloudImage(src) {
     if (!src) return null;
-    if (tokenImageCache[src] && tokenImageCache[src].complete) return tokenImageCache[src];
 
-    return new Promise((resolve, reject) => {
+    const cachedImage = tokenImageCache[src];
+    if (cachedImage && cachedImage.complete && cachedImage.naturalWidth > 0) {
+        return cachedImage;
+    }
+
+    const existingLoad = imageLoadPromises.get(src);
+    if (existingLoad) return existingLoad;
+
+    const loadPromise = new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
             tokenImageCache[src] = img;
             resolve(img);
         };
-        img.onerror = () => reject(new Error(`Image failed to load: ${src}`));
+        img.onerror = () => reject(new Error(`Image failed to load: ${describeImageSource(src)}`));
         img.src = src;
     });
+
+    imageLoadPromises.set(src, loadPromise);
+
+    try {
+        return await loadPromise;
+    } finally {
+        if (imageLoadPromises.get(src) === loadPromise) {
+            imageLoadPromises.delete(src);
+        }
+    }
 }
 
 function selectLocalFile(mode, spawnPoint = null) {
