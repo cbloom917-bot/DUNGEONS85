@@ -1,13 +1,13 @@
 {
-  "name": "bugbear-barbeque",
-  "version": "9.7.3.4.11.1",
-  "description": "Minimalist Central Server VTT Engine",
+  "name": "dungeons85",
+  "version": "9.7.3.4.12",
+  "description": "Dungeons '85 minimalist online tabletop server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "express": "4.19.2",
+    "socket.io": "4.7.5"
   }
 }

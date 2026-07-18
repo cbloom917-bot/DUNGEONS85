@@ -12,9 +12,13 @@ const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const MAX_SOCKET_PAYLOAD_BYTES = 16 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
+const MAX_PARTICIPANTS_PER_ROOM = 8;
+const MAX_ACTIVE_ROOMS = 20;
+const MAX_LIVE_SOCKET_CONNECTIONS = 160;
 const COMMUNITY_STATS_SAVE_DEBOUNCE_MS = 2000;
 const MAP_TRANSFER_RESERVATION_TIMEOUT_MS = 120000;
 const MAP_TRANSFER_COMPLETION_TIMEOUT_MS = 120000;
+const ALLOWED_DICE_SIDES = new Set([4, 6, 8, 10, 12, 20]);
 const RATE_LIMITS = Object.freeze({
     tokenMove: { windowMs: 1000, max: 30 },
     executeDiceRoll: { windowMs: 1000, max: 8 },
@@ -34,14 +38,35 @@ const io = new Server(server, {
     maxHttpBufferSize: MAX_SOCKET_PAYLOAD_BYTES,
     transports: ['websocket'],
     pingInterval: 25000,
-    pingTimeout: 60000 
+    pingTimeout: 60000
+});
+
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self)');
+    next();
+});
+
+io.use((socket, next) => {
+    const liveConnectionCount = Number(io.engine && io.engine.clientsCount) || (io.sockets.sockets.size + 1);
+    if (liveConnectionCount > MAX_LIVE_SOCKET_CONNECTIONS) {
+        const error = new Error('Dungeons ’85 is currently at server capacity. Please try again shortly.');
+        error.data = {
+            code: 'SERVER_CAPACITY',
+            message: error.message
+        };
+        next(error);
+        return;
+    }
+    next();
 });
 
 app.get('/version', (req, res) => {
     res.json({ version: pkg.version });
 });
 
-const COMMUNITY_STATS_FILE = path.join(__dirname, 'community-stats.json');
+const COMMUNITY_STATS_FILE = path.resolve(process.env.COMMUNITY_STATS_PATH || path.join(__dirname, 'community-stats.json'));
 
 function loadCommunityStats() {
     try {
@@ -69,11 +94,36 @@ function loadCommunityStats() {
 const communityStats = loadCommunityStats();
 let communityStatsSaveTimer = null;
 
+function ensureCommunityStatsDirectory() {
+    fs.mkdirSync(path.dirname(COMMUNITY_STATS_FILE), { recursive: true });
+}
+
 function flushCommunityStats() {
     communityStatsSaveTimer = null;
+
+    try {
+        ensureCommunityStatsDirectory();
+    } catch (err) {
+        console.warn('[SYS] Could not prepare community stats directory:', err);
+        return;
+    }
+
     fs.writeFile(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2), (err) => {
         if (err) console.warn('[SYS] Could not save community stats:', err);
     });
+}
+
+function flushCommunityStatsSync() {
+    try {
+        if (communityStatsSaveTimer) {
+            clearTimeout(communityStatsSaveTimer);
+            communityStatsSaveTimer = null;
+        }
+        ensureCommunityStatsDirectory();
+        fs.writeFileSync(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2));
+    } catch (err) {
+        console.warn('[SYS] Could not flush community stats during shutdown:', err);
+    }
 }
 
 function saveCommunityStats() {
@@ -131,6 +181,39 @@ function sanitizeDungeonLoadSignal(payload) {
     const loadId = String(payload.loadId || '').trim();
     if (!loadId || loadId.length > 80) return null;
     return { loadId };
+}
+
+function sanitizeDiceRoll(rollData, authoritativePlayerName) {
+    if (!rollData || typeof rollData !== 'object' || Array.isArray(rollData)) return null;
+
+    const { sides, result, player, screenX, screenY } = rollData;
+    if (
+        typeof sides !== 'number' ||
+        typeof result !== 'number' ||
+        typeof player !== 'string' ||
+        typeof screenX !== 'number' ||
+        typeof screenY !== 'number'
+    ) return null;
+
+    if (
+        !Number.isInteger(sides) ||
+        !Number.isInteger(result) ||
+        !Number.isInteger(screenX) ||
+        !Number.isInteger(screenY)
+    ) return null;
+
+    if (!ALLOWED_DICE_SIDES.has(sides)) return null;
+    if (result < 1 || result > sides) return null;
+    if (!player.trim() || player.length > 50) return null;
+    if (screenX < 0 || screenX > 100 || screenY < 0 || screenY > 100) return null;
+
+    return {
+        sides,
+        result,
+        player: String(authoritativePlayerName || 'Player').slice(0, 50),
+        screenX,
+        screenY
+    };
 }
 
 app.get('/community-stats', (req, res) => {
@@ -537,6 +620,13 @@ io.on('connection', (socket) => {
                 );
                 return;
             }
+            if (Object.keys(roomCampaignStates).length >= MAX_ACTIVE_ROOMS) {
+                rejectJoin(
+                    'SERVER_ROOM_CAPACITY',
+                    'Dungeons ’85 is currently hosting the maximum number of active tables. Please try again shortly.'
+                );
+                return;
+            }
             roomCampaignStates[requestedRoom] = {
                 mapSrc: null,
                 tokens: [],
@@ -589,6 +679,14 @@ io.on('connection', (socket) => {
             const dmSeatRecord = displacedDM
                 ? captureDmSeatRecord(state, displacedDM)
                 : rememberedDmSeat;
+
+            if (!preservedSeat && state.players.length >= MAX_PARTICIPANTS_PER_ROOM) {
+                rejectJoin(
+                    'ROOM_FULL',
+                    `This table is full. Dungeons ’85 supports up to ${MAX_PARTICIPANTS_PER_ROOM} participants per table.`
+                );
+                return;
+            }
 
             if (displacedDM) {
                 replacePeerIdInRoomState(state, displacedDM.peerId, peerId);
@@ -1218,9 +1316,17 @@ io.on('connection', (socket) => {
     });
 
     socket.on('executeDiceRoll', (rollData) => {
-        if (!currentRoom || !rollData || typeof rollData !== 'object') return;
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
         if (!allowSocketEvent(socket, 'executeDiceRoll')) return;
-        io.to(currentRoom).emit('diceRolledAnimation', rollData);
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(activePlayer => activePlayer.socketId === socket.id);
+        if (!player) return;
+
+        const sanitizedRoll = sanitizeDiceRoll(rollData, player.name);
+        if (!sanitizedRoll) return;
+
+        io.to(currentRoom).emit('diceRolledAnimation', sanitizedRoll);
     });
 
     socket.on('forceCamera', (cameraData) => {
@@ -1409,6 +1515,24 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
+let serverShutdownStarted = false;
+
+function shutdownServer(signal) {
+    if (serverShutdownStarted) return;
+    serverShutdownStarted = true;
+
+    console.log(`[SYS] ${signal} received; saving community stats and closing the server.`);
+    flushCommunityStatsSync();
+
+    server.close(() => process.exit(0));
+    const forcedExitTimer = setTimeout(() => process.exit(0), 5000);
+    if (typeof forcedExitTimer.unref === 'function') forcedExitTimer.unref();
+}
+
+process.on('SIGTERM', () => shutdownServer('SIGTERM'));
+process.on('SIGINT', () => shutdownServer('SIGINT'));
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Dungeons '85 Server Running on port ${PORT}]`);
+    console.log(`[SYS] Community stats path: ${COMMUNITY_STATS_FILE}`);
 });
