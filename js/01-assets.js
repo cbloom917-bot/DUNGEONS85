@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.11.1 — 01-assets.js
+// Dungeons '85 Public Beta 9.7.3.4.12 — 01-assets.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================

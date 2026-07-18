@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.11.1 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.12 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -574,6 +574,7 @@ function initHybridMediaVttStack(roomName, playerName) {
     let reconnectRecoveryPending = false;
     let currentSocketConnectIsReconnect = false;
     let tableInterfaceAdmissionConfirmed = false;
+    let connectionCapacityErrorShown = false;
 
     clearPeerMediaRecoveryTimers();
     clearPeerHardRecoveryTimer();
@@ -876,7 +877,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             setAdmissionUiState('failed', userMessage);
             alert(userMessage);
 
-            if (errorCode === 'DM_SEAT_CONFLICT') return;
+            if (['DM_SEAT_CONFLICT', 'ROOM_FULL', 'SERVER_ROOM_CAPACITY', 'SERVER_CAPACITY'].includes(errorCode)) return;
             window.location.reload();
         };
 
@@ -972,6 +973,14 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         socket.on('connect_error', (err) => {
             debugError("DEBUG: Socket connect_error:", err?.message || err, err);
+
+            const capacityError = err && typeof err.data === 'object' ? err.data : null;
+            if (!capacityError || capacityError.code !== 'SERVER_CAPACITY' || connectionCapacityErrorShown) return;
+
+            connectionCapacityErrorShown = true;
+            const message = capacityError.message || 'Dungeons ’85 is currently at server capacity. Please try again shortly.';
+            setAdmissionUiState('failed', message);
+            alert(message);
         });
 
         socket.on('error', (err) => {

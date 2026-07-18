@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.4 — 00-state.js
+// Dungeons '85 Public Beta 9.7.3.4.12 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -14,7 +14,7 @@ const DEFAULT_MAP_ZOOM = 0.5;
 const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
-const D85_DEBUG_LOGS = true;
+const D85_DEBUG_LOGS = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname);
 
 function debugLog(...args) {
     if (D85_DEBUG_LOGS) console.log(...args);

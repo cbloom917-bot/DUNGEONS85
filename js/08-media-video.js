@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.10.1 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.12 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -807,9 +807,8 @@ function sortVideoRibbon() {
     const ribbon = document.querySelector('.video-ribbon');
     if (!ribbon) return;
 
-    const boxes = Array.from(ribbon.querySelectorAll('.video-box'));
-
-    boxes.sort((a, b) => {
+    const currentBoxes = Array.from(ribbon.querySelectorAll('.video-box'));
+    const desiredBoxes = [...currentBoxes].sort((a, b) => {
         const aPeerId = a.dataset.peerId;
         const bPeerId = b.dataset.peerId;
 
@@ -836,7 +835,15 @@ function sortVideoRibbon() {
         return aName.localeCompare(bName);
     });
 
-    boxes.forEach(box => ribbon.appendChild(box));
+    const orderAlreadyMatches = currentBoxes.every((box, index) => box === desiredBoxes[index]);
+    if (!orderAlreadyMatches) {
+        desiredBoxes.forEach((box, index) => {
+            const boxesAtThisStep = Array.from(ribbon.querySelectorAll('.video-box'));
+            if (boxesAtThisStep[index] !== box) {
+                ribbon.insertBefore(box, boxesAtThisStep[index] || null);
+            }
+        });
+    }
 
     if (initiativePeerId) {
         setInitiativeSpotlight(initiativePeerId);

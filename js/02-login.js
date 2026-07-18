@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.9.1 — 02-login.js
+// Dungeons '85 Public Beta 9.7.3.4.12 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================

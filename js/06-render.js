@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4 — 06-render.js
+// Dungeons '85 Public Beta 9.7.3.4.12 — 06-render.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
