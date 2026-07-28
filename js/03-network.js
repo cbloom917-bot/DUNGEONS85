@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.13 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.13.5 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -1120,12 +1120,22 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
 
-        socket.on('removedFromTable', (payload) => {
+        let removalNoticeShown = false;
+        const handleRemovalNotice = (payload) => {
+            const removalId = String(payload?.removalId || '');
+
+            // Confirm receipt before opening the blocking browser dialog. The
+            // server may then close the socket without dismissing this notice.
+            if (removalId) socket.emit('acknowledgeRemovalNotice', { removalId });
+            if (removalNoticeShown) return;
+            removalNoticeShown = true;
+
             const message = payload?.message || 'You have been removed from this table at the Dungeon Master’s discretion.';
             alert(message);
-            socket.emit('acknowledgeRemovalNotice');
-            setTimeout(() => window.location.reload(), 150);
-        });
+            window.location.reload();
+        };
+
+        socket.on('tableRemovalApplied', handleRemovalNotice);
 
 
         socket.on('tableMuteApplied', (payload) => {
@@ -1470,4 +1480,3 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
     });
 }
-
