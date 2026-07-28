@@ -356,3 +356,30 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
         font-size: 9px !important;
     }
 }
+
+
+.video-moderation-menu {
+    position: fixed;
+    z-index: 1200;
+    width: 140px;
+    padding: 3px;
+    background: #000;
+    border: 1px solid #fff;
+    box-shadow: 3px 3px 0 #555;
+}
+.video-moderation-menu-item {
+    display: block;
+    width: 100%;
+    padding: 7px 9px;
+    background: #000;
+    color: #fff;
+    border: 0;
+    text-align: left;
+    font: inherit;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.video-moderation-menu-item:hover:not(:disabled) { background: #fff; color: #000; }
+.video-moderation-menu-item:disabled { color: #666; cursor: default; }
