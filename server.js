@@ -1048,23 +1048,40 @@ io.on('connection', (socket) => {
             targetSocket.data.skipRoomCleanupForSeatReclaim = true;
             targetSocket.data.pendingRemovalNotice = true;
 
-            let removalDisconnectComplete = false;
+            const removalId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const removalPayload = {
+                removalId,
+                message: 'You have been removed from this table at the Dungeon Master’s discretion.'
+            };
+            let removalComplete = false;
+            let removalRetryTimer = null;
+
             const disconnectRemovedPlayer = () => {
-                if (removalDisconnectComplete) return;
-                removalDisconnectComplete = true;
+                if (removalComplete) return;
+                removalComplete = true;
+                if (removalRetryTimer) clearInterval(removalRetryTimer);
                 targetSocket.data.pendingRemovalNotice = false;
                 if (targetSocket.connected) targetSocket.disconnect(true);
             };
 
-            targetSocket.once('acknowledgeRemovalNotice', disconnectRemovedPlayer);
-            targetSocket.emit('removedFromTable', {
-                message: 'You have been removed from this table at the Dungeon Master’s discretion.'
-            });
+            const acknowledgeRemovalNotice = (payload) => {
+                if (!payload || String(payload.removalId || '') !== removalId) return;
+                disconnectRemovedPlayer();
+            };
 
-            // A dedicated client event is more reliable than a Socket.IO callback
-            // acknowledgement when the target is being removed from live room state.
-            // Keep a fallback so an abandoned browser cannot retain a ghost socket.
-            setTimeout(disconnectRemovedPlayer, 15000);
+            const deliverRemovalNotice = () => {
+                if (removalComplete || !targetSocket.connected) return;
+                targetSocket.emit('tableRemovalApplied', removalPayload);
+            };
+
+            targetSocket.on('acknowledgeRemovalNotice', acknowledgeRemovalNotice);
+            deliverRemovalNotice();
+            removalRetryTimer = setInterval(deliverRemovalNotice, 500);
+
+            // The player is already gone from authoritative table state. This
+            // fallback only prevents an unreachable browser from retaining a
+            // ghost Socket.IO connection indefinitely.
+            setTimeout(disconnectRemovedPlayer, 5000);
         }
 
         io.to(currentRoom).emit('updatePlayerList', state.players);
