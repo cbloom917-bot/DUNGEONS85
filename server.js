@@ -593,13 +593,15 @@ io.on('connection', (socket) => {
             return;
         }
 
-        let { roomName, playerName, isDM, peerId } = data;
+        let { roomName, playerName, isDM, peerId, clientId } = data;
 
         if (
             typeof roomName !== 'string' ||
             typeof playerName !== 'string' ||
             typeof peerId !== 'string' ||
-            !peerId.trim()
+            !peerId.trim() ||
+            typeof clientId !== 'string' ||
+            !/^[A-Za-z0-9._:-]{8,128}$/.test(clientId)
         ) {
             rejectJoin('INVALID_JOIN_PAYLOAD', 'Invalid room, player name, or peer identity format.');
             return;
@@ -608,6 +610,7 @@ io.on('connection', (socket) => {
         const requestedRoom = roomName.substring(0, 50).toUpperCase();
         playerName = playerName.substring(0, 50);
         peerId = peerId.trim();
+        clientId = clientId.trim();
         isDM = Boolean(isDM);
 
         const roomAlreadyExisted = Boolean(roomCampaignStates[requestedRoom]);
@@ -641,7 +644,9 @@ io.on('connection', (socket) => {
                 videoOrder: [],
                 tableOrder: [],
                 lastDmSeat: null,
-                mapTransfer: null
+                mapTransfer: null,
+                blockedClientIds: new Set(),
+                tableMutedClientIds: new Set()
             };
             incrementCommunityStat('tablesSinceLaunch');
         }
@@ -657,6 +662,14 @@ io.on('connection', (socket) => {
             const state = roomCampaignStates[requestedRoom];
             if (!state) {
                 rejectJoin('ROOM_UNAVAILABLE', 'The table became unavailable while reconnecting. Please try again.');
+                return;
+            }
+
+            if (state.blockedClientIds && state.blockedClientIds.has(clientId)) {
+                rejectJoin(
+                    'REMOVED_FROM_TABLE',
+                    'You have been removed from this table at the Dungeon Master’s discretion.'
+                );
                 return;
             }
 
@@ -726,10 +739,12 @@ io.on('connection', (socket) => {
             const joinedPlayer = {
                 socketId: socket.id,
                 peerId,
+                clientId,
                 name: preservedSeat ? preservedSeat.name : playerName,
                 isDM: effectiveIsDM,
                 micEnabled: resetReclaimedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.micEnabled) : false),
-                camEnabled: resetReclaimedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.camEnabled) : false)
+                camEnabled: resetReclaimedMediaState ? false : (preservedSeat ? Boolean(preservedSeat.camEnabled) : false),
+                tableMuted: Boolean(state.tableMutedClientIds && state.tableMutedClientIds.has(clientId))
             };
             state.players.push(joinedPlayer);
 
@@ -937,6 +952,91 @@ io.on('connection', (socket) => {
         player.camEnabled = nextCamEnabled;
 
         io.to(currentRoom).emit('updatePlayerList', state.players);
+    });
+
+
+    socket.on('moderateTableMute', (payload) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!payload || typeof payload !== 'object') return;
+        if (!allowSocketEvent(socket, 'moderateTableMute')) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const requester = state.players.find(player => player.socketId === socket.id);
+        if (!requester || !requester.isDM) return;
+
+        const targetPeerId = typeof payload.peerId === 'string' ? payload.peerId.trim() : '';
+        if (!targetPeerId || targetPeerId.length > 128) return;
+        const target = state.players.find(player => String(player.peerId) === targetPeerId);
+        if (!target || target.isDM || !target.clientId) return;
+
+        if (!state.tableMutedClientIds) state.tableMutedClientIds = new Set();
+        state.tableMutedClientIds.add(String(target.clientId));
+        target.tableMuted = true;
+
+        io.to(currentRoom).emit('tableMuteChanged', { peerId: targetPeerId, muted: true });
+        io.to(currentRoom).emit('updatePlayerList', state.players);
+    });
+
+    socket.on('clearOwnTableMute', () => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!allowSocketEvent(socket, 'clearOwnTableMute')) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const player = state.players.find(participant => participant.socketId === socket.id);
+        if (!player || player.isDM || !player.clientId || !player.tableMuted) return;
+
+        if (state.tableMutedClientIds) state.tableMutedClientIds.delete(String(player.clientId));
+        player.tableMuted = false;
+        io.to(currentRoom).emit('tableMuteChanged', { peerId: String(player.peerId), muted: false });
+        io.to(currentRoom).emit('updatePlayerList', state.players);
+    });
+
+    socket.on('removePlayerFromTable', (payload) => {
+        if (!currentRoom || !roomCampaignStates[currentRoom]) return;
+        if (!payload || typeof payload !== 'object') return;
+        if (!allowSocketEvent(socket, 'removePlayerFromTable')) return;
+
+        const state = roomCampaignStates[currentRoom];
+        const requester = state.players.find(player => player.socketId === socket.id);
+        if (!requester || !requester.isDM) return;
+
+        const targetPeerId = typeof payload.peerId === 'string' ? payload.peerId.trim() : '';
+        if (!targetPeerId || targetPeerId.length > 128) return;
+        const target = state.players.find(player => String(player.peerId) === targetPeerId);
+        if (!target || target.isDM || !target.clientId || target.socketId === socket.id) return;
+
+        if (!state.blockedClientIds) state.blockedClientIds = new Set();
+        state.blockedClientIds.add(String(target.clientId));
+        if (state.tableMutedClientIds) state.tableMutedClientIds.delete(String(target.clientId));
+
+        const priorVideoOrder = Array.isArray(state.videoOrder) ? [...state.videoOrder].map(String) : [];
+        const removedInitiativeIndex = Math.max(0, priorVideoOrder.indexOf(targetPeerId));
+
+        releaseSocketFromRoomMapTransfer(currentRoom, target.socketId);
+        state.players = state.players.filter(player => player.socketId !== target.socketId);
+
+        const remainingPeerIds = new Set(state.players.map(player => String(player.peerId)));
+        state.videoOrder = (state.videoOrder || []).filter(peerId => remainingPeerIds.has(String(peerId)));
+        state.tableOrder = (state.tableOrder || []).filter(peerId => remainingPeerIds.has(String(peerId)));
+
+        if (String(state.initiativePeerId || '') === targetPeerId) {
+            state.initiativePeerId = state.videoOrder.length
+                ? String(state.videoOrder[Math.min(removedInitiativeIndex, state.videoOrder.length - 1)])
+                : null;
+        }
+
+        const targetSocket = io.sockets.sockets.get(target.socketId);
+        if (targetSocket) {
+            targetSocket.data.skipRoomCleanupForSeatReclaim = true;
+            targetSocket.emit('removedFromTable', {
+                message: 'You have been removed from this table at the Dungeon Master’s discretion.'
+            });
+            setTimeout(() => targetSocket.disconnect(true), 100);
+        }
+
+        io.to(currentRoom).emit('updatePlayerList', state.players);
+        io.to(currentRoom).emit('syncVideoOrder', state.videoOrder || []);
+        io.to(currentRoom).emit('syncInitiativeSpotlight', state.initiativePeerId || null);
     });
 
     socket.on('updateTokensMatrix', (tokens) => {
