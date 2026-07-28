@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.13 — 00-state.js
+// Dungeons '85 Public Beta 9.8.2 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -14,7 +14,35 @@ const DEFAULT_MAP_ZOOM = 0.5;
 const MAX_IMAGE_DATA_URL_LENGTH = 12 * 1024 * 1024;
 const MAX_FOW_POLYGONS = 500;
 const MAX_FOW_POINTS_PER_POLYGON = 250;
-const D85_DEBUG_LOGS = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname);
+const D85_DEBUG_LOGS = (() => {
+    const isLocalHost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname);
+    if (isLocalHost) return true;
+
+    const storageKey = 'd85DebugLogs';
+    const enabledValues = new Set(['1', 'true', 'on']);
+    const disabledValues = new Set(['0', 'false', 'off']);
+
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('debug')) {
+            const requestedValue = String(params.get('debug') || '').trim().toLowerCase();
+
+            if (enabledValues.has(requestedValue)) {
+                window.sessionStorage.setItem(storageKey, '1');
+                return true;
+            }
+
+            if (disabledValues.has(requestedValue)) {
+                window.sessionStorage.removeItem(storageKey);
+                return false;
+            }
+        }
+
+        return window.sessionStorage.getItem(storageKey) === '1';
+    } catch (err) {
+        return false;
+    }
+})();
 
 function debugLog(...args) {
     if (D85_DEBUG_LOGS) console.log(...args);
@@ -190,4 +218,3 @@ const nouns = [
     "Obelisk", "Ossuary", "Palisade", "Ruin", "Sanctum",
     "Sepulcher", "Spire", "Tomb", "Undercrypt", "Ziggurat"
 ];
-
