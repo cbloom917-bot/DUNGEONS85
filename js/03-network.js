@@ -1120,10 +1120,10 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
 
-        socket.on('removedFromTable', (payload, acknowledge) => {
+        socket.on('removedFromTable', (payload) => {
             const message = payload?.message || 'You have been removed from this table at the Dungeon Master’s discretion.';
             alert(message);
-            if (typeof acknowledge === 'function') acknowledge();
+            socket.emit('acknowledgeRemovalNotice');
             setTimeout(() => window.location.reload(), 150);
         });
 
