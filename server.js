@@ -980,6 +980,17 @@ io.on('connection', (socket) => {
         state.tableMutedClientIds.add(String(target.clientId));
         target.tableMuted = true;
 
+        // Notify the affected browser directly. The table-wide event below is keyed
+        // by PeerJS identity for remote audio suppression, but that identity can be
+        // migrating during reconnect. Socket targeting guarantees the player receives
+        // the moderation notice and local control-state change.
+        const targetSocket = io.sockets.sockets.get(target.socketId);
+        if (targetSocket) {
+            targetSocket.emit('tableMuteApplied', {
+                message: 'The Dungeon Master has muted you. Select Unmute when you are ready to speak.'
+            });
+        }
+
         io.to(currentRoom).emit('tableMuteChanged', { peerId: targetPeerId, muted: true });
         io.to(currentRoom).emit('updatePlayerList', state.players);
     });
