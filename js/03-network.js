@@ -1067,7 +1067,23 @@ function initHybridMediaVttStack(roomName, playerName) {
             const localPlayerState = playersArray.find(
                 player => String(player.peerId) === String(localPeerId)
             );
-            localTableMuted = Boolean(localPlayerState && localPlayerState.tableMuted);
+
+            // Announce a DM mute the moment it lands, anchored to the
+            // authoritative roster broadcast that also flips this seat's mute
+            // state. This fires even if a dedicated mute event is not delivered.
+            // Only a genuine transition into muted is announced, and only once
+            // this seat has already been observed, so a participant returning
+            // while already muted is not re-notified. The shared guard prevents
+            // a second dialog when a mute event was also received.
+            const nowTableMuted = Boolean(localPlayerState && localPlayerState.tableMuted);
+            if (hasObservedLocalSeat && nowTableMuted && !previousLocalTableMuted) {
+                showTableMuteNotice();
+            }
+            if (!nowTableMuted) tableMuteNoticeShown = false;
+            if (localPlayerState) hasObservedLocalSeat = true;
+            previousLocalTableMuted = nowTableMuted;
+
+            localTableMuted = nowTableMuted;
             const localBox = document.getElementById('local-video-container');
             if (localBox) localBox.dataset.tableMuted = localTableMuted ? 'true' : 'false';
 
@@ -1145,12 +1161,14 @@ function initHybridMediaVttStack(roomName, playerName) {
 
 
         // The mute dialog must appear the instant the Dungeon Master mutes the
-        // player. The targeted 'tableMuteApplied' event can be missed (for
-        // example when the participant is served by another node), while the
-        // room-wide 'tableMuteChanged' broadcast that actually mutes the mic is
-        // delivered reliably. Drive the dialog from whichever event lands first
-        // and guard it so a single mute never shows two dialogs.
+        // player. Rather than relying only on a mute event reaching this client,
+        // the dialog is driven from whichever reliable signal lands first: the
+        // 'tableMuteApplied'/'tableMuteChanged' events, or the authoritative
+        // 'updatePlayerList' roster broadcast that also flips this seat's mute
+        // state. A single shared guard means one mute never shows two dialogs.
         let tableMuteNoticeShown = false;
+        let previousLocalTableMuted = false;
+        let hasObservedLocalSeat = false;
         const showTableMuteNotice = (message) => {
             if (tableMuteNoticeShown) return;
             tableMuteNoticeShown = true;
@@ -1159,6 +1177,9 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         socket.on('tableMuteApplied', (payload) => {
             localTableMuted = true;
+
+            // Show the dialog first so nothing downstream can prevent it.
+            showTableMuteNotice(payload?.message);
 
             const localBox = document.getElementById('local-video-container');
             if (localBox) localBox.dataset.tableMuted = 'true';
@@ -1174,7 +1195,6 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             showLocalMediaStatus('mic', 'MIC OFF');
             publishLocalMediaState();
-            showTableMuteNotice(payload?.message);
         });
 
         socket.on('tableMuteChanged', (payload) => {
