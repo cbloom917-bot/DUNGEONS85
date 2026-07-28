@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.12 — 03-network.js
+// Dungeons '85 Public Beta 9.7.3.4.13 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -877,7 +877,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             setAdmissionUiState('failed', userMessage);
             alert(userMessage);
 
-            if (['DM_SEAT_CONFLICT', 'ROOM_FULL', 'SERVER_ROOM_CAPACITY', 'SERVER_CAPACITY'].includes(errorCode)) return;
+            if (['DM_SEAT_CONFLICT', 'ROOM_FULL', 'SERVER_ROOM_CAPACITY', 'SERVER_CAPACITY', 'REMOVED_FROM_TABLE'].includes(errorCode)) return;
             window.location.reload();
         };
 
@@ -923,7 +923,8 @@ function initHybridMediaVttStack(roomName, playerName) {
                 roomName,
                 playerName,
                 isDM: tableState.isDM,
-                peerId: localPeerId
+                peerId: localPeerId,
+                clientId: tableClientId
             }, (result) => {
                 if (attemptId !== joinAttemptCounter) return;
 
@@ -1063,6 +1064,13 @@ function initHybridMediaVttStack(roomName, playerName) {
                 player => String(player.peerId) === String(localPeerId)
             );
 
+            const localPlayerState = playersArray.find(
+                player => String(player.peerId) === String(localPeerId)
+            );
+            localTableMuted = Boolean(localPlayerState && localPlayerState.tableMuted);
+            const localBox = document.getElementById('local-video-container');
+            if (localBox) localBox.dataset.tableMuted = localTableMuted ? 'true' : 'false';
+
             if (latestPlayerListHasLocalSeat) {
                 dmSeatConflictRetryCount = 0;
                 clearDmSeatConflictRetry();
@@ -1109,6 +1117,29 @@ function initHybridMediaVttStack(roomName, playerName) {
             }
 
             if (!appliedIdentityReplacementOrder) sortVideoRibbon();
+        });
+
+
+        socket.on('removedFromTable', (payload) => {
+            const message = payload?.message || 'You have been removed from this table at the Dungeon Master’s discretion.';
+            alert(message);
+            window.location.reload();
+        });
+
+        socket.on('tableMuteChanged', (payload) => {
+            if (!payload || typeof payload !== 'object') return;
+            const targetPeerId = String(payload.peerId || '');
+            const muted = Boolean(payload.muted);
+
+            if (targetPeerId === String(localPeerId || '')) {
+                localTableMuted = muted;
+                const localBox = document.getElementById('local-video-container');
+                if (localBox) localBox.dataset.tableMuted = muted ? 'true' : 'false';
+            }
+
+            const player = currentActiveRoomArray.find(p => String(p.peerId) === targetPeerId);
+            if (player) player.tableMuted = muted;
+            applyTableMuteToPeer(targetPeerId, muted);
         });
 
 

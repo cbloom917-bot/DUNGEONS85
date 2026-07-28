@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.12 — 00-state.js
+// Dungeons '85 Public Beta 9.7.3.4.13 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -56,6 +56,7 @@ let activeRoomName = '';
 let initiativePeerId = null;
 let customVideoOrder = [];
 let tableOrder = []; // Saved exploration/marching order restored when combat initiative ends.
+let localTableMuted = false;
 
 let isDrawingFoW = false;
 let currentFoWPolygon = [];
@@ -73,6 +74,23 @@ let notesVisible = false;
 let openNoteId = null;
 let pendingNoteWorldPosition = null;
 let tableDirty = false;
+
+function getOrCreateTableClientId() {
+    const storageKey = 'd85TableClientId';
+    let clientId = localStorage.getItem(storageKey);
+    if (clientId && /^[A-Za-z0-9._:-]{8,128}$/.test(clientId)) return clientId;
+
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        clientId = window.crypto.randomUUID();
+    } else {
+        clientId = `d85-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    localStorage.setItem(storageKey, clientId);
+    return clientId;
+}
+
+const tableClientId = getOrCreateTableClientId();
 
 let activeSketchTool = null;
 let sketchDraft = null;

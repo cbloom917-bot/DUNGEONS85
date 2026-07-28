@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.12 — 08-media-video.js
+// Dungeons '85 Public Beta 9.7.3.4.13 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -341,6 +341,9 @@ function applyPlayerMediaStateToVideoBox(box, player) {
     if (typeof player.camEnabled === 'boolean') {
         box.dataset.camEnabled = player.camEnabled ? 'true' : 'false';
     }
+
+    box.dataset.tableMuted = player.tableMuted ? 'true' : 'false';
+    applyTableMuteToPeer(player.peerId, Boolean(player.tableMuted));
 }
 
 function shouldInitiatePeerCall(remotePeerId, reason = "media-refresh") {
@@ -773,7 +776,7 @@ function ensurePlayerVideoSeat(player) {
     const videoEl = document.createElement('video');
     videoEl.autoplay = true;
     videoEl.playsInline = true;
-    videoEl.muted = false;
+    videoEl.muted = Boolean(player.tableMuted);
 
     const label = document.createElement('div');
     label.className = 'video-label';
@@ -850,10 +853,82 @@ function sortVideoRibbon() {
     }
 }
 
+
+function applyTableMuteToPeer(peerId, muted) {
+    const key = String(peerId || '');
+    if (!key) return;
+
+    const box = key === String(localPeerId || '')
+        ? getLocalVideoContainer()
+        : document.getElementById(`video-${key}`);
+    if (!box) return;
+
+    box.dataset.tableMuted = muted ? 'true' : 'false';
+    const video = box.querySelector('video');
+    if (video && key !== String(localPeerId || '')) video.muted = muted;
+}
+
+function closeVideoModerationMenu() {
+    const menu = document.getElementById('video-moderation-menu');
+    if (menu) menu.remove();
+}
+
+function createModerationMenuButton(label, disabled, onClick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'video-moderation-menu-item';
+    button.textContent = label;
+    button.disabled = Boolean(disabled);
+    button.addEventListener('click', () => {
+        if (button.disabled) return;
+        closeVideoModerationMenu();
+        onClick();
+    });
+    return button;
+}
+
+function openVideoModerationMenu(event) {
+    if (!tableState.isDM) return;
+
+    const box = event.currentTarget;
+    const targetPeerId = String(box?.dataset?.peerId || '');
+    const targetIsDm = box?.dataset?.isDm === 'true' || targetPeerId === String(localPeerId || '');
+    if (!targetPeerId || targetIsDm) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeVideoModerationMenu();
+
+    const menu = document.createElement('div');
+    menu.id = 'video-moderation-menu';
+    menu.className = 'video-moderation-menu';
+    menu.style.left = `${Math.min(event.clientX, window.innerWidth - 150)}px`;
+    menu.style.top = `${Math.min(event.clientY, window.innerHeight - 90)}px`;
+
+    const alreadyMuted = box.dataset.tableMuted === 'true';
+    menu.appendChild(createModerationMenuButton('Mute', alreadyMuted, () => {
+        if (socket) socket.emit('moderateTableMute', { peerId: targetPeerId });
+    }));
+
+    menu.appendChild(createModerationMenuButton('Remove', false, () => {
+        const confirmed = confirm('Remove this player?\n\nThey will be disconnected and blocked from rejoining this table.');
+        if (confirmed && socket) socket.emit('removePlayerFromTable', { peerId: targetPeerId });
+    }));
+
+    document.body.appendChild(menu);
+}
+
+document.addEventListener('click', closeVideoModerationMenu);
+document.addEventListener('contextmenu', (event) => {
+    if (!event.target?.closest?.('.video-box')) closeVideoModerationMenu();
+});
+window.addEventListener('blur', closeVideoModerationMenu);
+
 function setupVideoBoxInitiative(box) {
     if (!box || box.dataset.initiativeBound === "true") return;
 
     box.dataset.initiativeBound = "true";
+    box.addEventListener('contextmenu', openVideoModerationMenu);
 
     box.addEventListener('click', (e) => {
         if (!tableState.isDM) return;
