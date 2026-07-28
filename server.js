@@ -231,6 +231,26 @@ app.get('/community-stats', (req, res) => {
     });
 });
 
+const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
+
+// The HTML shell is never cached. Every local JS/CSS URL is stamped from the
+// single release version in package.json before it reaches the browser.
+app.get(['/', '/index.html'], (req, res) => {
+    fs.readFile(INDEX_HTML_PATH, 'utf8', (err, html) => {
+        if (err) {
+            console.warn('[SYS] Could not serve index.html:', err);
+            res.status(500).type('text').send('Unable to load application.');
+            return;
+        }
+
+        const stampedHtml = html
+            .split('__ASSET_VERSION__')
+            .join(encodeURIComponent(pkg.version));
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.type('html').send(stampedHtml);
+    });
+});
 
 app.use(express.static(__dirname));
 
@@ -1056,30 +1076,16 @@ io.on('connection', (socket) => {
                 : null;
         }
 
-        const removalId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-        const removalPayload = {
-            removalId,
-            peerId: targetPeerId,
-            message: 'You have been removed from this table at the Dungeon Master’s discretion.'
-        };
-
-        // Deliver the removal notice over the room the participant is still
-        // joined to (they are not disconnected until acknowledged or timed out
-        // below). A room broadcast is delivered reliably through the shared
-        // adapter, whereas a direct handle from io.sockets.sockets.get is
-        // local-only and can be absent when the participant is served by another
-        // node — previously leaving them with no removal dialog until a rejoin
-        // attempt was rejected. The client ignores notices addressed to a
-        // different peerId.
-        const broadcastRemovalNotice = () => {
-            io.to(currentRoom).emit('tableRemovalApplied', removalPayload);
-        };
-
         const targetSocket = io.sockets.sockets.get(target.socketId);
         if (targetSocket) {
             targetSocket.data.skipRoomCleanupForSeatReclaim = true;
             targetSocket.data.pendingRemovalNotice = true;
 
+            const removalId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const removalPayload = {
+                removalId,
+                message: 'You have been removed from this table at the Dungeon Master’s discretion.'
+            };
             let removalComplete = false;
             let removalRetryTimer = null;
 
@@ -1097,8 +1103,8 @@ io.on('connection', (socket) => {
             };
 
             const deliverRemovalNotice = () => {
-                if (removalComplete) return;
-                broadcastRemovalNotice();
+                if (removalComplete || !targetSocket.connected) return;
+                targetSocket.emit('tableRemovalApplied', removalPayload);
             };
 
             targetSocket.on('acknowledgeRemovalNotice', acknowledgeRemovalNotice);
@@ -1109,10 +1115,6 @@ io.on('connection', (socket) => {
             // fallback only prevents an unreachable browser from retaining a
             // ghost Socket.IO connection indefinitely.
             setTimeout(disconnectRemovedPlayer, 5000);
-        } else {
-            // No local socket handle for this participant (e.g. connected to a
-            // different node). The room broadcast still guarantees the dialog.
-            broadcastRemovalNotice();
         }
 
         io.to(currentRoom).emit('updatePlayerList', state.players);

@@ -1,6 +1,6 @@
 {
   "name": "dungeons85",
-  "version": "9.8",
+  "version": "9.8.2",
   "description": "Dungeons '85 minimalist online tabletop server",
   "main": "server.js",
   "scripts": {
