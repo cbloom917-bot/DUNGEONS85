@@ -77,7 +77,14 @@ let tableDirty = false;
 
 function getOrCreateTableClientId() {
     const storageKey = 'd85TableClientId';
-    let clientId = localStorage.getItem(storageKey);
+    let clientId = null;
+
+    try {
+        clientId = localStorage.getItem(storageKey);
+    } catch (error) {
+        debugWarn('DEBUG: Browser storage is unavailable; using a session-only table identity.');
+    }
+
     if (clientId && /^[A-Za-z0-9._:-]{8,128}$/.test(clientId)) return clientId;
 
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -86,7 +93,12 @@ function getOrCreateTableClientId() {
         clientId = `d85-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     }
 
-    localStorage.setItem(storageKey, clientId);
+    try {
+        localStorage.setItem(storageKey, clientId);
+    } catch (error) {
+        debugWarn('DEBUG: Table identity could not be persisted in browser storage.');
+    }
+
     return clientId;
 }
 
