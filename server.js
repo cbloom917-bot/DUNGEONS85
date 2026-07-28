@@ -599,9 +599,7 @@ io.on('connection', (socket) => {
             typeof roomName !== 'string' ||
             typeof playerName !== 'string' ||
             typeof peerId !== 'string' ||
-            !peerId.trim() ||
-            typeof clientId !== 'string' ||
-            !/^[A-Za-z0-9._:-]{8,128}$/.test(clientId)
+            !peerId.trim()
         ) {
             rejectJoin('INVALID_JOIN_PAYLOAD', 'Invalid room, player name, or peer identity format.');
             return;
@@ -610,7 +608,16 @@ io.on('connection', (socket) => {
         const requestedRoom = roomName.substring(0, 50).toUpperCase();
         playerName = playerName.substring(0, 50);
         peerId = peerId.trim();
-        clientId = clientId.trim();
+
+        // Compatibility fallback for a cached pre-Table-Safety client or a browser
+        // that cannot persist localStorage. Current clients provide a stable clientId;
+        // legacy clients remain usable and are scoped to their existing PeerJS identity.
+        if (typeof clientId === 'string') clientId = clientId.trim();
+        if (!clientId || !/^[A-Za-z0-9._:-]{8,128}$/.test(clientId)) {
+            const encodedPeerId = Buffer.from(peerId, 'utf8').toString('base64url').slice(0, 110);
+            clientId = `legacy:${encodedPeerId || 'peer'}`;
+        }
+
         isDM = Boolean(isDM);
 
         const roomAlreadyExisted = Boolean(roomCampaignStates[requestedRoom]);
