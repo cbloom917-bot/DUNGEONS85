@@ -1122,6 +1122,12 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         let removalNoticeShown = false;
         const handleRemovalNotice = (payload) => {
+            // The removal notice is delivered as a room broadcast so it reaches
+            // the participant even when a direct socket delivery is unavailable.
+            // Ignore any notice addressed to a different participant.
+            const noticePeerId = String(payload?.peerId || '');
+            if (noticePeerId && noticePeerId !== String(localPeerId || '')) return;
+
             const removalId = String(payload?.removalId || '');
 
             // Confirm receipt before opening the blocking browser dialog. The
@@ -1137,6 +1143,19 @@ function initHybridMediaVttStack(roomName, playerName) {
 
         socket.on('tableRemovalApplied', handleRemovalNotice);
 
+
+        // The mute dialog must appear the instant the Dungeon Master mutes the
+        // player. The targeted 'tableMuteApplied' event can be missed (for
+        // example when the participant is served by another node), while the
+        // room-wide 'tableMuteChanged' broadcast that actually mutes the mic is
+        // delivered reliably. Drive the dialog from whichever event lands first
+        // and guard it so a single mute never shows two dialogs.
+        let tableMuteNoticeShown = false;
+        const showTableMuteNotice = (message) => {
+            if (tableMuteNoticeShown) return;
+            tableMuteNoticeShown = true;
+            alert(message || 'The Dungeon Master has muted you. Select Unmute when you are ready to speak.');
+        };
 
         socket.on('tableMuteApplied', (payload) => {
             localTableMuted = true;
@@ -1155,7 +1174,7 @@ function initHybridMediaVttStack(roomName, playerName) {
 
             showLocalMediaStatus('mic', 'MIC OFF');
             publishLocalMediaState();
-            alert(payload?.message || 'The Dungeon Master has muted you. Select Unmute when you are ready to speak.');
+            showTableMuteNotice(payload?.message);
         });
 
         socket.on('tableMuteChanged', (payload) => {
@@ -1179,6 +1198,11 @@ function initHybridMediaVttStack(roomName, playerName) {
                     }
                     showLocalMediaStatus('mic', 'MIC OFF');
                     publishLocalMediaState();
+                    showTableMuteNotice(payload.message);
+                } else {
+                    // Cleared mute: allow the dialog to appear again if the
+                    // Dungeon Master mutes this player a second time.
+                    tableMuteNoticeShown = false;
                 }
             }
 
