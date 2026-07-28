@@ -66,7 +66,15 @@ app.get('/version', (req, res) => {
     res.json({ version: pkg.version });
 });
 
-const COMMUNITY_STATS_FILE = path.resolve(process.env.COMMUNITY_STATS_PATH || path.join(__dirname, 'community-stats.json'));
+const DEFAULT_COMMUNITY_STATS_FILE = process.env.RENDER
+    ? '/var/data/community-stats.json'
+    : path.join(__dirname, 'community-stats.json');
+const COMMUNITY_STATS_FILE = path.resolve(process.env.COMMUNITY_STATS_PATH || DEFAULT_COMMUNITY_STATS_FILE);
+
+function normalizeCommunityStat(value) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
 
 function loadCommunityStats() {
     try {
@@ -79,8 +87,8 @@ function loadCommunityStats() {
 
         const parsed = JSON.parse(fs.readFileSync(COMMUNITY_STATS_FILE, 'utf8'));
         return {
-            playersSinceLaunch: Number(parsed.playersSinceLaunch) || 0,
-            tablesSinceLaunch: Number(parsed.tablesSinceLaunch) || 0
+            playersSinceLaunch: normalizeCommunityStat(parsed.playersSinceLaunch),
+            tablesSinceLaunch: normalizeCommunityStat(parsed.tablesSinceLaunch)
         };
     } catch (err) {
         console.warn('[SYS] Could not load community stats:', err);
@@ -103,14 +111,12 @@ function flushCommunityStats() {
 
     try {
         ensureCommunityStatsDirectory();
+        const temporaryFile = `${COMMUNITY_STATS_FILE}.tmp`;
+        fs.writeFileSync(temporaryFile, JSON.stringify(communityStats, null, 2));
+        fs.renameSync(temporaryFile, COMMUNITY_STATS_FILE);
     } catch (err) {
-        console.warn('[SYS] Could not prepare community stats directory:', err);
-        return;
+        console.warn('[SYS] Could not save community stats:', err);
     }
-
-    fs.writeFile(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2), (err) => {
-        if (err) console.warn('[SYS] Could not save community stats:', err);
-    });
 }
 
 function flushCommunityStatsSync() {
@@ -120,7 +126,9 @@ function flushCommunityStatsSync() {
             communityStatsSaveTimer = null;
         }
         ensureCommunityStatsDirectory();
-        fs.writeFileSync(COMMUNITY_STATS_FILE, JSON.stringify(communityStats, null, 2));
+        const temporaryFile = `${COMMUNITY_STATS_FILE}.tmp`;
+        fs.writeFileSync(temporaryFile, JSON.stringify(communityStats, null, 2));
+        fs.renameSync(temporaryFile, COMMUNITY_STATS_FILE);
     } catch (err) {
         console.warn('[SYS] Could not flush community stats during shutdown:', err);
     }
@@ -653,7 +661,8 @@ io.on('connection', (socket) => {
                 lastDmSeat: null,
                 mapTransfer: null,
                 blockedClientIds: new Set(),
-                tableMutedClientIds: new Set()
+                tableMutedClientIds: new Set(),
+                countedClientIds: new Set()
             };
             incrementCommunityStat('tablesSinceLaunch');
         }
@@ -773,7 +782,11 @@ io.on('connection', (socket) => {
                 captureDmSeatRecord(state, joinedPlayer);
             }
 
-            if (!preservedSeat) incrementCommunityStat('playersSinceLaunch');
+            if (!state.countedClientIds) state.countedClientIds = new Set();
+            if (!state.countedClientIds.has(clientId)) {
+                state.countedClientIds.add(clientId);
+                incrementCommunityStat('playersSinceLaunch');
+            }
 
             if (state.wipeTimer) {
                 clearTimeout(state.wipeTimer);
