@@ -1127,6 +1127,27 @@ function initHybridMediaVttStack(roomName, playerName) {
             setTimeout(() => window.location.reload(), 150);
         });
 
+
+        socket.on('tableMuteApplied', (payload) => {
+            localTableMuted = true;
+
+            const localBox = document.getElementById('local-video-container');
+            if (localBox) localBox.dataset.tableMuted = 'true';
+
+            const localAudioTrack = localStream?.getAudioTracks?.()[0];
+            if (localAudioTrack) localAudioTrack.enabled = false;
+
+            const micButton = document.getElementById('toggle-mic-btn');
+            if (micButton) {
+                micButton.innerText = 'Unmute';
+                micButton.classList.add('muted-state');
+            }
+
+            showLocalMediaStatus('mic', 'MIC OFF');
+            publishLocalMediaState();
+            alert(payload?.message || 'The Dungeon Master has muted you. Select Unmute when you are ready to speak.');
+        });
+
         socket.on('tableMuteChanged', (payload) => {
             if (!payload || typeof payload !== 'object') return;
             const targetPeerId = String(payload.peerId || '');
@@ -1148,7 +1169,6 @@ function initHybridMediaVttStack(roomName, playerName) {
                     }
                     showLocalMediaStatus('mic', 'MIC OFF');
                     publishLocalMediaState();
-                    alert('The Dungeon Master has muted you. Select Unmute when you are ready to speak.');
                 }
             }
 
