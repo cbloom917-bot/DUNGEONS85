@@ -1035,10 +1035,21 @@ io.on('connection', (socket) => {
         const targetSocket = io.sockets.sockets.get(target.socketId);
         if (targetSocket) {
             targetSocket.data.skipRoomCleanupForSeatReclaim = true;
+
+            let removalDisconnectComplete = false;
+            const disconnectRemovedPlayer = () => {
+                if (removalDisconnectComplete) return;
+                removalDisconnectComplete = true;
+                if (targetSocket.connected) targetSocket.disconnect(true);
+            };
+
             targetSocket.emit('removedFromTable', {
                 message: 'You have been removed from this table at the Dungeon Master’s discretion.'
-            });
-            setTimeout(() => targetSocket.disconnect(true), 100);
+            }, disconnectRemovedPlayer);
+
+            // Do not strand a removed connection if its browser never acknowledges,
+            // but allow ample time for the required notice to appear first.
+            setTimeout(disconnectRemovedPlayer, 15000);
         }
 
         io.to(currentRoom).emit('updatePlayerList', state.players);
