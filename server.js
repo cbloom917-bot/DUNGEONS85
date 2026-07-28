@@ -1046,20 +1046,24 @@ io.on('connection', (socket) => {
         const targetSocket = io.sockets.sockets.get(target.socketId);
         if (targetSocket) {
             targetSocket.data.skipRoomCleanupForSeatReclaim = true;
+            targetSocket.data.pendingRemovalNotice = true;
 
             let removalDisconnectComplete = false;
             const disconnectRemovedPlayer = () => {
                 if (removalDisconnectComplete) return;
                 removalDisconnectComplete = true;
+                targetSocket.data.pendingRemovalNotice = false;
                 if (targetSocket.connected) targetSocket.disconnect(true);
             };
 
+            targetSocket.once('acknowledgeRemovalNotice', disconnectRemovedPlayer);
             targetSocket.emit('removedFromTable', {
                 message: 'You have been removed from this table at the Dungeon Master’s discretion.'
-            }, disconnectRemovedPlayer);
+            });
 
-            // Do not strand a removed connection if its browser never acknowledges,
-            // but allow ample time for the required notice to appear first.
+            // A dedicated client event is more reliable than a Socket.IO callback
+            // acknowledgement when the target is being removed from live room state.
+            // Keep a fallback so an abandoned browser cannot retain a ghost socket.
             setTimeout(disconnectRemovedPlayer, 15000);
         }
 
