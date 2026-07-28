@@ -1120,10 +1120,11 @@ function initHybridMediaVttStack(roomName, playerName) {
         });
 
 
-        socket.on('removedFromTable', (payload) => {
+        socket.on('removedFromTable', (payload, acknowledge) => {
             const message = payload?.message || 'You have been removed from this table at the Dungeon Master’s discretion.';
             alert(message);
-            window.location.reload();
+            if (typeof acknowledge === 'function') acknowledge();
+            setTimeout(() => window.location.reload(), 150);
         });
 
         socket.on('tableMuteChanged', (payload) => {
@@ -1135,6 +1136,20 @@ function initHybridMediaVttStack(roomName, playerName) {
                 localTableMuted = muted;
                 const localBox = document.getElementById('local-video-container');
                 if (localBox) localBox.dataset.tableMuted = muted ? 'true' : 'false';
+
+                const localAudioTrack = localStream?.getAudioTracks?.()[0];
+                const micButton = document.getElementById('toggle-mic-btn');
+
+                if (muted) {
+                    if (localAudioTrack) localAudioTrack.enabled = false;
+                    if (micButton) {
+                        micButton.innerText = 'Unmute';
+                        micButton.classList.add('muted-state');
+                    }
+                    showLocalMediaStatus('mic', 'MIC OFF');
+                    publishLocalMediaState();
+                    alert('The Dungeon Master has muted you. Select Unmute when you are ready to speak.');
+                }
             }
 
             const player = currentActiveRoomArray.find(p => String(p.peerId) === targetPeerId);

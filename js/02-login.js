@@ -239,7 +239,8 @@ function forcePlayerFocus() {
 
 
 async function toggleLocalAudio() {
-        if (localTableMuted && socket) {
+        const wasTableMuted = localTableMuted;
+        if (wasTableMuted && socket) {
             socket.emit('clearOwnTableMute');
             localTableMuted = false;
             const localBox = document.getElementById('local-video-container');
@@ -254,7 +255,9 @@ async function toggleLocalAudio() {
         const btn = document.getElementById('toggle-mic-btn');
 
         if (existingTrack) {
-            existingTrack.enabled = !existingTrack.enabled;
+            // The red Unmute button after a DM mute is an affirmative unmute.
+            // Do not clear the table mute and then toggle the track back off.
+            existingTrack.enabled = wasTableMuted ? true : !existingTrack.enabled;
             if (btn) {
                 btn.innerText = existingTrack.enabled ? "Mute" : "Unmute";
                 btn.classList.toggle('muted-state', !existingTrack.enabled);
