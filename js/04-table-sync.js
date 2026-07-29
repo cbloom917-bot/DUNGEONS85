@@ -169,7 +169,12 @@ function selectSketchTool(tool) {
     if (!tableState.isDM) return;
     if (!['line', 'circle', 'rect', 'eraser'].includes(tool)) return;
 
-    if (activeSketchTool === tool && tool !== 'eraser') {
+    if (activeSketchTool === tool) {
+        if (tool === 'eraser') {
+            clearSketchTool();
+            return;
+        }
+
         const currentColorIndex = sketchToolColors[tool] || 0;
         const nextColorIndex = currentColorIndex + 1;
 
