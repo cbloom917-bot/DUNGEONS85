@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8 — 03-network.js
+// Dungeons '85 Public Beta 9.8.4 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================

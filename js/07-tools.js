@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.7.3.4.12 — 07-tools.js
+// Dungeons '85 Public Beta 9.8.4 — 07-tools.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -206,5 +206,4 @@ function resetTurns() {
         }
         document.getElementById('turn-message').replaceChildren();
     }
-
 
