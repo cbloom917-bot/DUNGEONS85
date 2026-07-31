@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.6 — 00-state.js
+// Dungeons '85 Public Beta 9.8.7.1 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -77,6 +77,13 @@ let tokenImageCache = {};
 let socket = null;
 let peer = null;
 let localStream = null;
+let placeholderAudioTrack = null;
+let placeholderVideoTrack = null;
+let placeholderAudioContext = null;
+let placeholderAudioSource = null;
+let placeholderAudioGain = null;
+let placeholderVideoCanvas = null;
+let placeholderVideoCanvasStream = null;
 let activePeerCalls = new Map();
 let currentActiveRoomArray = [];
 let localPeerId = null;

@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.6 — 02-login.js
+// Dungeons '85 Public Beta 9.8.7.1 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -309,58 +309,56 @@ async function toggleLocalAudio() {
         }
 
         if (!localStream) {
-            localStream = new MediaStream();
+            localStream = createSeededLocalMediaStream();
         }
 
-        const existingTrack = localStream.getAudioTracks()[0];
+        const existingTrack = getRealLocalTrack('audio');
         const btn = document.getElementById('toggle-mic-btn');
 
         if (existingTrack) {
-            // The red Unmute button after a DM mute is an affirmative unmute.
-            // Do not clear the table mute and then toggle the track back off.
             existingTrack.enabled = wasTableMuted ? true : !existingTrack.enabled;
             if (btn) {
                 btn.innerText = existingTrack.enabled ? "Mute" : "Unmute";
                 btn.classList.toggle('muted-state', !existingTrack.enabled);
             }
 
-            if (existingTrack.enabled) {
-                clearLocalMediaStatus("mic");
-            } else {
-                showLocalMediaStatus("mic", "MIC OFF");
-            }
+            if (existingTrack.enabled) clearLocalMediaStatus("mic");
+            else showLocalMediaStatus("mic", "MIC OFF");
 
             publishLocalMediaState();
-
-            // Normal mute/unmute keeps healthy calls in place. After sleep/wake,
-            // a missing call may need to be recreated before the enabled track can
-            // reach the table; repair only missing calls so established feeds do not blink.
             if (existingTrack.enabled) {
-                refreshPeerMediaConnections("microphone-recovery", { onlyMissing: true });
+                establishMissingCallsForLocalMediaActivation('microphone-recovery');
             }
             return;
         }
 
         try {
+            const placeholderReady = await resumePlaceholderAudioContext();
+            if (!placeholderReady) {
+                throw new Error('Silent placeholder audio context could not resume.');
+            }
+
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CAPTURE_CONSTRAINTS, video: false });
             const audioTrack = micStream.getAudioTracks()[0];
+            if (!audioTrack) throw new Error('Microphone permission returned no audio track.');
 
-            if (audioTrack) {
-                localStream.addTrack(audioTrack);
+            audioTrack.enabled = true;
+            replaceLocalStreamTrack('audio', audioTrack);
 
-                const localVideo = document.getElementById('local-video');
-                if (localVideo) localVideo.srcObject = localStream;
+            const localVideo = document.getElementById('local-video');
+            if (localVideo) localVideo.srcObject = localStream;
 
-                if (btn) {
-                    btn.innerText = "Mute";
-                    btn.classList.remove('muted-state');
-                }
+            await replaceAudioTrackOnActivePeerCalls(audioTrack);
 
-                clearLocalMediaStatus("mic");
-                publishLocalMediaState();
-                debugLog("DEBUG: Microphone permission granted on demand.");
-                refreshPeerMediaConnections("microphone-permission");
+            if (btn) {
+                btn.innerText = "Mute";
+                btn.classList.remove('muted-state');
             }
+
+            clearLocalMediaStatus("mic");
+            publishLocalMediaState();
+            establishMissingCallsForLocalMediaActivation('microphone-permission');
+            debugLog("DEBUG: Microphone permission granted on demand without rebuilding healthy media calls.");
         } catch (err) {
             debugWarn("DEBUG: Microphone access denied on demand:", err);
             showLocalMediaStatus("mic", "MIC BLOCKED — ENABLE IT IN BROWSER SETTINGS");
@@ -371,22 +369,26 @@ async function toggleLocalAudio() {
         }
     }
 
-
 async function toggleLocalVideo() {
         if (!localStream) {
-            localStream = new MediaStream();
+            localStream = createSeededLocalMediaStream();
         }
 
-        const existingTracks = localStream.getVideoTracks();
+        const existingTrack = getRealLocalTrack('video');
         const btn = document.getElementById('toggle-cam-btn');
 
-        if (existingTracks.length) {
-            await replaceVideoTrackOnActivePeerCalls(null);
+        if (existingTrack) {
+            const placeholder = getPlaceholderTrack('video');
+            if (!placeholder || placeholder.readyState === 'ended') {
+                showLocalMediaStatus("cam", "CAMERA COULD NOT TURN OFF SAFELY");
+                return;
+            }
 
-            existingTracks.forEach(track => {
-                track.stop();
-                localStream.removeTrack(track);
-            });
+            restorePlaceholderTrack('video');
+            await replaceVideoTrackOnActivePeerCalls(placeholder);
+            try { existingTrack.stop(); } catch (err) {
+                debugWarn('DEBUG: Failed to stop released camera track:', err);
+            }
 
             const localVideo = document.getElementById('local-video');
             if (localVideo) localVideo.srcObject = localStream;
@@ -397,41 +399,34 @@ async function toggleLocalVideo() {
             }
 
             showLocalMediaStatus("cam", "CAMERA OFF");
+            setCameraOffSilhouetteVisibility(getLocalVideoContainer(), false);
             publishLocalMediaState();
-
-            // Turning camera off releases only this participant's local camera
-            // track. Do not rebuild PeerJS calls here: each call also carries an
-            // incoming remote stream, so closing those calls blanks every camera
-            // in this participant's local video ribbon.
             return;
         }
 
         try {
             const cameraStream = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CAPTURE_CONSTRAINTS, audio: false });
             const videoTrack = cameraStream.getVideoTracks()[0];
+            if (!videoTrack) throw new Error('Camera permission returned no video track.');
 
-            if (videoTrack) {
-                localStream.addTrack(videoTrack);
+            videoTrack.enabled = true;
+            replaceLocalStreamTrack('video', videoTrack);
 
-                const localVideo = document.getElementById('local-video');
-                if (localVideo) localVideo.srcObject = localStream;
+            const localVideo = document.getElementById('local-video');
+            if (localVideo) localVideo.srcObject = localStream;
 
-                if (btn) {
-                    btn.innerText = "Cam Off";
-                    btn.classList.remove('muted-state');
-                }
+            await replaceVideoTrackOnActivePeerCalls(videoTrack);
 
-                clearLocalMediaStatus("cam");
-                publishLocalMediaState();
-                debugLog("DEBUG: Camera permission granted on demand.");
-
-                const replacedVideoSenders = await replaceVideoTrackOnActivePeerCalls(videoTrack);
-                if (!replacedVideoSenders) {
-                    refreshPeerMediaConnections("camera-permission");
-                } else {
-                    refreshPeerMediaConnections("camera-recovery", { onlyMissing: true });
-                }
+            if (btn) {
+                btn.innerText = "Cam Off";
+                btn.classList.remove('muted-state');
             }
+
+            clearLocalMediaStatus("cam");
+            setCameraOffSilhouetteVisibility(getLocalVideoContainer(), true);
+            publishLocalMediaState();
+            establishMissingCallsForLocalMediaActivation('camera-permission');
+            debugLog("DEBUG: Camera permission granted on demand without rebuilding healthy media calls.");
         } catch (err) {
             debugWarn("DEBUG: Camera access denied on demand:", err);
             showLocalMediaStatus("cam", "CAMERA BLOCKED — ENABLE IT IN BROWSER SETTINGS");

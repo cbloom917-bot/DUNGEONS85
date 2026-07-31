@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.6 — 03-network.js
+// Dungeons '85 Public Beta 9.8.7.1 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -424,7 +424,8 @@ function notePeerCallEstablished(peerId) {
 
 function recoverMissingPeerMediaCalls(source) {
     if (peerIdentityMigrationInProgress) return;
-    if (!peer || !peer.open || peer.disconnected || peer.destroyed || !hasLocalMediaTracks()) return;
+    if (!peer || !peer.open || peer.disconnected || peer.destroyed) return;
+    if (!getExpectedPeerMediaPlayers().length) return;
 
     const callsStarted = refreshPeerMediaConnections(`reconnect-${source}`, {
         onlyMissing: true,
@@ -515,7 +516,10 @@ function installIncomingPeerCallHandler(peerClient) {
         }
 
         const callerPeerId = String(call.peer || '');
-        closePeerConnectionsForPeer(callerPeerId, { removeVideoBox: false });
+        closePeerConnectionsForPeer(callerPeerId, {
+            removeVideoBox: false,
+            preserveVideoDuringRefresh: true
+        });
         registerPeerCall(callerPeerId, call);
         call.answer(localStream);
         setTimeout(() => applyVttVideoSenderSettings(call), 0);
@@ -1087,6 +1091,20 @@ function initHybridMediaVttStack(roomName, playerName) {
                 ensurePlayerVideoSeat(p);
             });
 
+            // Media activation on an otherwise idle table needs one initial
+            // sendrecv call before replaceTrack has a sender to use. The lower
+            // PeerJS id is the sole caller, preventing simultaneous first-unmute
+            // glare while placeholder-only tables remain call-free.
+            playersArray.forEach(p => {
+                if (!p || p.peerId === localPeerId) return;
+                const previous = previousPlayers.find(existing => String(existing.peerId) === String(p.peerId));
+                const wasPublishing = previous?.micEnabled === true || previous?.camEnabled === true;
+                const isPublishing = p.micEnabled === true || p.camEnabled === true;
+                if (wasPublishing || !isPublishing || hasActivePeerCall(p.peerId)) return;
+                if (String(localPeerId || '') >= String(p.peerId || '')) return;
+                callPeerWithLocalStream(p, 'remote-media-activated');
+            });
+
             let shouldScheduleNewPeerRecovery = false;
 
             playersArray.forEach(p => {
@@ -1167,7 +1185,7 @@ function initHybridMediaVttStack(roomName, playerName) {
             const localBox = document.getElementById('local-video-container');
             if (localBox) localBox.dataset.tableMuted = 'true';
 
-            const localAudioTrack = localStream?.getAudioTracks?.()[0];
+            const localAudioTrack = typeof getRealLocalTrack === 'function' ? getRealLocalTrack('audio') : null;
             if (localAudioTrack) localAudioTrack.enabled = false;
 
             const micButton = document.getElementById('toggle-mic-btn');
@@ -1190,7 +1208,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 const localBox = document.getElementById('local-video-container');
                 if (localBox) localBox.dataset.tableMuted = muted ? 'true' : 'false';
 
-                const localAudioTrack = localStream?.getAudioTracks?.()[0];
+                const localAudioTrack = typeof getRealLocalTrack === 'function' ? getRealLocalTrack('audio') : null;
                 const micButton = document.getElementById('toggle-mic-btn');
 
                 if (muted) {

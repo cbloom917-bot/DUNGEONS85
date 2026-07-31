@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.6 — 08-media-video.js
+// Dungeons '85 Public Beta 9.8.7.1 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -7,6 +7,178 @@
 
 let pendingTableOrderRestore = null;
 let pendingTableOrderRestoreTimer = null;
+
+const CAMERA_OFF_ARCHETYPES = [
+    'WIZARD', 'FIGHTER', 'THIEF', 'RANGER', 'CLERIC', 'DWARF', 'ELF', 'BARBARIAN'
+];
+
+function isD85PlaceholderTrack(track, kind = null) {
+    if (!track || track._d85Placeholder !== true) return false;
+    return !kind || track.kind === kind;
+}
+
+function getRealLocalTrack(kind) {
+    if (!localStream || typeof localStream.getTracks !== 'function') return null;
+    return localStream.getTracks().find(track =>
+        track && track.kind === kind && !isD85PlaceholderTrack(track) && track.readyState !== 'ended'
+    ) || null;
+}
+
+function getPlaceholderTrack(kind) {
+    return kind === 'audio' ? placeholderAudioTrack : placeholderVideoTrack;
+}
+
+function hashSilhouetteSeed(value) {
+    const text = String(value || 'D85');
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+        hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+    }
+    return Math.abs(hash);
+}
+
+function ensureCameraOffSilhouette(box, identity = '') {
+    if (!box) return null;
+    let silhouette = box.querySelector('.camera-off-silhouette');
+    if (!silhouette) {
+        silhouette = document.createElement('div');
+        silhouette.className = 'camera-off-silhouette';
+        silhouette.setAttribute('aria-hidden', 'true');
+        silhouette.innerHTML = '<span class="camera-off-silhouette-head"></span><span class="camera-off-silhouette-body"></span><span class="camera-off-silhouette-role"></span>';
+        box.insertBefore(silhouette, box.firstChild);
+    }
+    const seed = hashSilhouetteSeed(identity || box.dataset.peerId || box.dataset.name || box.id);
+    const role = CAMERA_OFF_ARCHETYPES[seed % CAMERA_OFF_ARCHETYPES.length];
+    silhouette.dataset.archetype = role.toLowerCase();
+    const roleLabel = silhouette.querySelector('.camera-off-silhouette-role');
+    if (roleLabel) roleLabel.textContent = role;
+    return silhouette;
+}
+
+function setCameraOffSilhouetteVisibility(box, camEnabled) {
+    if (!box) return;
+    const silhouette = ensureCameraOffSilhouette(box, box.dataset.peerId || box.dataset.name || box.id);
+    if (silhouette) silhouette.hidden = camEnabled === true;
+}
+
+function createPlaceholderVideoTrack() {
+    if (placeholderVideoTrack && placeholderVideoTrack.readyState !== 'ended') return placeholderVideoTrack;
+    if (!document || typeof document.createElement !== 'function') return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 180;
+    const context = canvas.getContext('2d');
+    if (context) {
+        context.fillStyle = '#000';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    if (typeof canvas.captureStream !== 'function') return null;
+
+    const stream = canvas.captureStream(1);
+    const track = stream.getVideoTracks()[0] || null;
+    if (!track) return null;
+    track.enabled = false;
+    track._d85Placeholder = true;
+    track._d85PlaceholderKind = 'video';
+    placeholderVideoCanvas = canvas;
+    placeholderVideoCanvasStream = stream;
+    placeholderVideoTrack = track;
+    return track;
+}
+
+function createPlaceholderAudioTrack() {
+    if (placeholderAudioTrack && placeholderAudioTrack.readyState !== 'ended') return placeholderAudioTrack;
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return null;
+
+    const context = new AudioContextCtor();
+    const destination = context.createMediaStreamDestination();
+    const gain = context.createGain();
+    const source = context.createOscillator();
+    gain.gain.value = 0;
+    source.connect(gain);
+    gain.connect(destination);
+    source.start();
+
+    const track = destination.stream.getAudioTracks()[0] || null;
+    if (!track) {
+        try { source.stop(); } catch (err) {}
+        try { context.close(); } catch (err) {}
+        return null;
+    }
+    track.enabled = false;
+    track._d85Placeholder = true;
+    track._d85PlaceholderKind = 'audio';
+    placeholderAudioContext = context;
+    placeholderAudioSource = source;
+    placeholderAudioGain = gain;
+    placeholderAudioTrack = track;
+    return track;
+}
+
+async function resumePlaceholderAudioContext() {
+    if (!placeholderAudioContext || placeholderAudioContext.state !== 'suspended') return true;
+    try {
+        await placeholderAudioContext.resume();
+        return placeholderAudioContext.state !== 'suspended';
+    } catch (err) {
+        debugWarn('DEBUG: Silent placeholder AudioContext could not resume:', err);
+        return false;
+    }
+}
+
+function seedLocalPlaceholderTracks(stream = null) {
+    const targetStream = stream || new MediaStream();
+    const audioTrack = createPlaceholderAudioTrack();
+    const videoTrack = createPlaceholderVideoTrack();
+    if (!audioTrack || !videoTrack) {
+        throw new Error('Required placeholder media tracks are unavailable in this browser.');
+    }
+    if (!targetStream.getAudioTracks().length) targetStream.addTrack(audioTrack);
+    if (!targetStream.getVideoTracks().length) targetStream.addTrack(videoTrack);
+    return targetStream;
+}
+
+function createSeededLocalMediaStream() {
+    return seedLocalPlaceholderTracks(new MediaStream());
+}
+
+function replaceLocalStreamTrack(kind, nextTrack) {
+    if (!localStream || !nextTrack || nextTrack.kind !== kind) return false;
+    localStream.getTracks().filter(track => track.kind === kind).forEach(track => {
+        localStream.removeTrack(track);
+    });
+    localStream.addTrack(nextTrack);
+    return true;
+}
+
+function restorePlaceholderTrack(kind) {
+    const placeholder = getPlaceholderTrack(kind);
+    if (!placeholder || placeholder.readyState === 'ended') return false;
+    placeholder.enabled = false;
+    return replaceLocalStreamTrack(kind, placeholder);
+}
+
+function stopPlaceholderMediaResources() {
+    [placeholderAudioTrack, placeholderVideoTrack].forEach(track => {
+        if (!track) return;
+        try { track.stop(); } catch (err) {}
+    });
+    if (placeholderAudioSource) {
+        try { placeholderAudioSource.stop(); } catch (err) {}
+    }
+    if (placeholderAudioContext) {
+        try { placeholderAudioContext.close(); } catch (err) {}
+    }
+    placeholderAudioTrack = null;
+    placeholderVideoTrack = null;
+    placeholderAudioContext = null;
+    placeholderAudioSource = null;
+    placeholderAudioGain = null;
+    placeholderVideoCanvas = null;
+    placeholderVideoCanvasStream = null;
+}
 
 
 function getLocalVideoContainer() {
@@ -81,10 +253,16 @@ async function setupCameraAndVideo() {
     // Join the table without requesting browser media permissions.
     // Microphone and camera are requested later only when the user clicks
     // Unmute or Cam On.
-    localStream = new MediaStream();
+    localStream = createSeededLocalMediaStream();
 
     const localVideo = document.getElementById('local-video');
     if (localVideo) localVideo.srcObject = localStream;
+    const localBox = getLocalVideoContainer();
+    if (localBox) {
+        localBox.dataset.peerId = String(localPeerId || 'local');
+        ensureCameraOffSilhouette(localBox, localPeerId || tableState.playerName || 'local');
+        setCameraOffSilhouetteVisibility(localBox, false);
+    }
 
     const micBtn = document.getElementById('toggle-mic-btn');
     if (micBtn) {
@@ -135,6 +313,7 @@ function stopLocalMediaStream() {
     });
 
     localStream = null;
+    stopPlaceholderMediaResources();
 
     const localVideo = document.getElementById('local-video');
     if (localVideo) {
@@ -153,6 +332,7 @@ function resetLocalMediaAfterIdentityRecovery() {
 
     if (localStream && typeof localStream.getTracks === 'function') {
         localStream.getTracks().forEach(track => {
+            if (isD85PlaceholderTrack(track)) return;
             try {
                 track.stop();
             } catch (err) {
@@ -161,7 +341,7 @@ function resetLocalMediaAfterIdentityRecovery() {
         });
     }
 
-    localStream = new MediaStream();
+    localStream = createSeededLocalMediaStream();
 
     const localVideo = document.getElementById('local-video');
     if (localVideo) {
@@ -190,6 +370,7 @@ function resetLocalMediaAfterIdentityRecovery() {
 
     showLocalMediaStatus("mic", "MIC OFF");
     showLocalMediaStatus("cam", "CAMERA OFF");
+    setCameraOffSilhouetteVisibility(getLocalVideoContainer(), false);
     publishLocalMediaState();
 
     debugWarn("DEBUG: Local microphone and camera reset OFF after PeerJS identity recovery.");
@@ -305,24 +486,17 @@ function handlePeerCallError(peerId, call, err, context = 'PeerJS call error') {
 }
 
 function hasLocalMediaTracks() {
-    return !!(
-        localStream &&
-        typeof localStream.getTracks === 'function' &&
-        localStream.getTracks().some(track => track && track.readyState !== 'ended')
-    );
+    const state = getLocalMediaState();
+    return state.micEnabled || state.camEnabled;
 }
 
 function getLocalMediaState() {
-    const audioTracks = localStream && typeof localStream.getAudioTracks === 'function'
-        ? localStream.getAudioTracks()
-        : [];
-    const videoTracks = localStream && typeof localStream.getVideoTracks === 'function'
-        ? localStream.getVideoTracks()
-        : [];
+    const audioTrack = getRealLocalTrack('audio');
+    const videoTrack = getRealLocalTrack('video');
 
     return {
-        micEnabled: audioTracks.some(track => track && track.enabled && track.readyState !== 'ended'),
-        camEnabled: videoTracks.some(track => track && track.enabled && track.readyState !== 'ended')
+        micEnabled: !!(audioTrack && audioTrack.enabled && audioTrack.readyState !== 'ended'),
+        camEnabled: !!(videoTrack && videoTrack.enabled && videoTrack.readyState !== 'ended')
     };
 }
 
@@ -343,6 +517,7 @@ function applyPlayerMediaStateToVideoBox(box, player) {
     }
 
     box.dataset.tableMuted = player.tableMuted ? 'true' : 'false';
+    setCameraOffSilhouetteVisibility(box, player.camEnabled === true);
     applyTableMuteToPeer(player.peerId, Boolean(player.tableMuted));
 }
 
@@ -362,10 +537,9 @@ function shouldInitiatePeerCall(remotePeerId, reason = "media-refresh") {
         return String(localPeerId) < String(remotePeerId);
     }
 
-    // Local media changes must be offered by the client whose stream changed.
-    // Normal table membership calls are deterministic so two browsers do not
-    // call each other at the same time and create duplicate WebRTC connections.
-    if (reason !== "new-player") return true;
+    // All normal initial/recovery offers use one deterministic caller. This is
+    // especially important when two idle peers unmute at nearly the same time:
+    // only the lower PeerJS id may establish the sendrecv connection.
     return String(localPeerId) < String(remotePeerId);
 }
 
@@ -424,11 +598,9 @@ function closePeerConnectionsForPeer(peerId, options = {}) {
 
     const videoEl = box.querySelector('video');
 
-    // When a user grants mic/camera permission for the first time, we need to
-    // rebuild outgoing media calls so other players can receive the new track.
-    // Preserve the existing incoming video element locally until the replacement
-    // stream arrives; otherwise the joining player's already-visible feeds blink
-    // off while the PeerJS call is being refreshed.
+    // Preserve the existing remote frame during reconnect or identity recovery.
+    // First-time mic/camera activation now uses replaceTrack on healthy calls and
+    // creates only missing connections, so it does not deliberately tear down feeds.
     if (!options.preserveVideoDuringRefresh && videoEl) {
         releaseVideoElement(videoEl, { removeAttribute: !!options.removeVideoBox });
     }
@@ -450,44 +622,40 @@ function closeAllPeerConnections(options = {}) {
     activePeerCalls.clear();
 }
 
-async function replaceVideoTrackOnActivePeerCalls(videoTrack) {
+async function replaceMediaTrackOnActivePeerCalls(kind, mediaTrack) {
     const replacements = [];
     let successfulReplacements = 0;
 
     Array.from(activePeerCalls.keys()).forEach(peerId => {
         const calls = prunePeerCallSet(peerId);
-
         Array.from(calls).forEach(call => {
             if (isPeerCallClosed(call) || !call.peerConnection) return;
-
             const senders = typeof call.peerConnection.getSenders === 'function'
                 ? call.peerConnection.getSenders()
                 : [];
-
-            senders.forEach(sender => {
-                if (!sender || typeof sender.replaceTrack !== 'function') return;
-
-                const isVideoSender = sender._d85VideoSender === true ||
-                    (sender.track && sender.track.kind === 'video');
-                if (!isVideoSender) return;
-
-                sender._d85VideoSender = true;
-                replacements.push(
-                    Promise.resolve()
-                        .then(() => sender.replaceTrack(videoTrack || null))
-                        .then(() => {
-                            successfulReplacements += 1;
-                        })
-                        .catch(err => {
-                            debugWarn("DEBUG: Failed to replace outgoing camera track:", err);
-                        })
-                );
-            });
+            const sender = senders.find(candidate => candidate && (
+                candidate[`_d85${kind === 'video' ? 'Video' : 'Audio'}Sender`] === true ||
+                (candidate.track && candidate.track.kind === kind)
+            ));
+            if (!sender || typeof sender.replaceTrack !== 'function') return;
+            sender[`_d85${kind === 'video' ? 'Video' : 'Audio'}Sender`] = true;
+            replacements.push(Promise.resolve()
+                .then(() => sender.replaceTrack(mediaTrack))
+                .then(() => { successfulReplacements += 1; })
+                .catch(err => debugWarn(`DEBUG: Failed to replace outgoing ${kind} track:`, err)));
         });
     });
 
     await Promise.all(replacements);
     return successfulReplacements;
+}
+
+async function replaceAudioTrackOnActivePeerCalls(audioTrack) {
+    return replaceMediaTrackOnActivePeerCalls('audio', audioTrack);
+}
+
+async function replaceVideoTrackOnActivePeerCalls(videoTrack) {
+    return replaceMediaTrackOnActivePeerCalls('video', videoTrack);
 }
 
 function applyVttVideoSenderSettings(call) {
@@ -573,8 +741,8 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
 
     try {
         // One live PeerJS media call per remote peer keeps long sessions from
-        // accumulating stale RTCPeerConnections. First-time media permissions
-        // rebuild the call; normal mute/unmute toggles existing tracks in place.
+        // accumulating stale RTCPeerConnections. Healthy calls receive real media
+        // through replaceTrack; this path only establishes a missing connection.
         closePeerConnectionsForPeer(player.peerId, {
             removeVideoBox: false,
             preserveVideoDuringRefresh: reason === "camera-permission" || reason === "microphone-permission" || reason === "camera-release"
@@ -608,6 +776,22 @@ function callPeerWithLocalStream(player, reason = "media-refresh") {
         closePeerConnectionsForPeer(player.peerId, { removeVideoBox: false });
         return null;
     }
+}
+
+function establishMissingCallsForLocalMediaActivation(reason = 'local-media-activated') {
+    if (!peer || !peer.open || peer.disconnected || peer.destroyed) return 0;
+    if (!localStream || !Array.isArray(currentActiveRoomArray)) return 0;
+    let callsStarted = 0;
+    currentActiveRoomArray.forEach(player => {
+        if (!player || !player.peerId || String(player.peerId) === String(localPeerId)) return;
+        if (hasActivePeerCall(player.peerId)) return;
+        // Deterministic caller prevents simultaneous first-unmute glare. The lower
+        // PeerJS id establishes the initial sendrecv call after either side reports
+        // real media. Placeholder-only peers never create an idle full mesh.
+        if (String(localPeerId) >= String(player.peerId)) return;
+        if (callPeerWithLocalStream(player, reason)) callsStarted += 1;
+    });
+    return callsStarted;
 }
 
 function refreshPeerMediaConnections(reason = "media-refresh", options = {}) {
@@ -772,6 +956,7 @@ function ensurePlayerVideoSeat(player) {
     box.dataset.name = characterName;
     box.dataset.isDm = isDM ? 'true' : 'false';
     applyPlayerMediaStateToVideoBox(box, player);
+    ensureCameraOffSilhouette(box, peerId);
 
     const videoEl = document.createElement('video');
     videoEl.autoplay = true;
