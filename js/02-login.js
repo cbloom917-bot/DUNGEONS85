@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.4 — 02-login.js
+// Dungeons '85 Public Beta 9.8.5 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -380,4 +380,3 @@ async function toggleLocalVideo() {
             }
         }
     }
-

@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.4 — 05-canvas-input.js
+// Dungeons '85 Public Beta 9.8.5 — 05-canvas-input.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -519,4 +519,3 @@ function makeElementsDraggable() {
             };
         });
     }
-

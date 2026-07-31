@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.4 — 06-render.js
+// Dungeons '85 Public Beta 9.8.5 — 06-render.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -286,4 +286,3 @@ async function draw() {
             ctx.restore();
         }
     }
-

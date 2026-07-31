@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.4 — 09-persistence.js
+// Dungeons '85 Public Beta 9.8.5 — 09-persistence.js
 // Ordered client module. Preserve script load order in index.html.
 
 function sanitizeFilenamePart(value) {

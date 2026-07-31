@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.4 — 10-version.js
+// Dungeons '85 Public Beta 9.8.5 — 10-version.js
 // Reads the running server version from package.json through /version.
 
 async function hydrateVersionDisplay() {
