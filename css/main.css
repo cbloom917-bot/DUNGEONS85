@@ -211,58 +211,15 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
 
 
-.camera-off-silhouette {
+.camera-off-test-pattern {
     position: absolute;
     inset: 0;
     z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    background: radial-gradient(circle at 50% 38%, #3b3b3b 0, #171717 55%, #080808 100%);
+    background: #111 url("../assets/camera-off-test-pattern.webp") center / cover no-repeat;
     pointer-events: none;
 }
 
-.camera-off-silhouette[hidden] { display: none; }
-
-.camera-off-silhouette-head {
-    position: absolute;
-    top: 18%;
-    width: 24%;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    background: #050505;
-    border: 2px solid #777;
-}
-
-.camera-off-silhouette-body {
-    position: absolute;
-    bottom: -18%;
-    width: 70%;
-    height: 70%;
-    border-radius: 48% 48% 8% 8%;
-    background: #050505;
-    border: 2px solid #666;
-}
-
-.camera-off-silhouette-role {
-    position: absolute;
-    top: 7px;
-    right: 7px;
-    color: #aaa;
-    font-size: 8px;
-    font-weight: bold;
-    letter-spacing: 0.08em;
-}
-
-.camera-off-silhouette[data-archetype="wizard"] .camera-off-silhouette-head { border-radius: 45% 45% 50% 50%; box-shadow: 0 -13px 0 -4px #050505; }
-.camera-off-silhouette[data-archetype="fighter"] .camera-off-silhouette-head { border-radius: 35% 35% 50% 50%; border-top-width: 7px; }
-.camera-off-silhouette[data-archetype="thief"] .camera-off-silhouette-head { box-shadow: 10px 3px 0 -7px #888; }
-.camera-off-silhouette[data-archetype="ranger"] .camera-off-silhouette-body { transform: skewX(-5deg); }
-.camera-off-silhouette[data-archetype="cleric"] .camera-off-silhouette-body { border-top: 4px double #777; }
-.camera-off-silhouette[data-archetype="dwarf"] .camera-off-silhouette-head { top: 22%; width: 28%; }
-.camera-off-silhouette[data-archetype="elf"] .camera-off-silhouette-head { border-radius: 50% 50% 42% 42%; }
-.camera-off-silhouette[data-archetype="barbarian"] .camera-off-silhouette-body { width: 82%; }
+.camera-off-test-pattern[hidden] { display: none; }
 
 .remote-media-status {
     position: absolute;
