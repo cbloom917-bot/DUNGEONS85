@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.5 — 08-media-video.js
+// Dungeons '85 Public Beta 9.8.6 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================

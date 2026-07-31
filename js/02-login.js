@@ -1,9 +1,39 @@
-// Dungeons '85 Public Beta 9.8.5 — 02-login.js
+// Dungeons '85 Public Beta 9.8.6 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
 // Login and room selection
 // ============================================================
+
+let landingAdmissionPending = false;
+
+function getLandingActionLabel() {
+    if (!tableState.isDM) return "JOIN";
+    return gmRoomMode === "rejoin" ? "REJOIN" : "CREATE";
+}
+
+function setLandingAdmissionState(state = "idle", message = "") {
+    const joinButton = document.getElementById('join-btn');
+    const roomNote = document.getElementById('gm-room-note');
+    const actionLabel = getLandingActionLabel();
+
+    landingAdmissionPending = state === "pending";
+
+    if (joinButton) {
+        joinButton.disabled = landingAdmissionPending;
+        joinButton.innerText = landingAdmissionPending ? `${actionLabel}...` : actionLabel;
+    }
+
+    ['role-player', 'role-dm', 'gm-create', 'gm-rejoin', 'char-name-input', 'room-id-input'].forEach((id) => {
+        const control = document.getElementById(id);
+        if (control) control.disabled = landingAdmissionPending;
+    });
+
+    if (roomNote) {
+        roomNote.textContent = message;
+        roomNote.classList.toggle('hidden', !message);
+    }
+}
 
 function generateRandomRoomName(force = false) {
     const roomInput = document.getElementById('room-id-input');
@@ -72,12 +102,11 @@ function applyDmRoomMode(mode) {
     }
 
     if (gmRoomNote) {
-        gmRoomNote.classList.remove('hidden');
-        gmRoomNote.textContent = gmRoomMode === "rejoin"
-            ? "Rejoins or creates an empty table with last used name."
-            : "Create a new table and replace your saved table.";
+        gmRoomNote.textContent = "";
+        gmRoomNote.classList.add('hidden');
     }
     refreshDmRoomModeButtons();
+    setLandingAdmissionState('idle');
 }
 
 function setRoleSelection(isDMSelection) {
@@ -96,7 +125,7 @@ function setRoleSelection(isDMSelection) {
 
     if (isDMSelection) {
         if (gmRoomModeBox) gmRoomModeBox.classList.remove('hidden');
-        if (gmRoomNote) gmRoomNote.classList.remove('hidden');
+        if (gmRoomNote) gmRoomNote.classList.add('hidden');
         applyDmRoomMode("create");
     } else {
         gmRoomMode = "rejoin";
@@ -104,6 +133,7 @@ function setRoleSelection(isDMSelection) {
         if (gmRoomNote) gmRoomNote.classList.add('hidden');
         if (roomInput) roomInput.value = "";
         if (nameInput) nameInput.value = localStorage.getItem('d85LastPlayerName') || "";
+        setLandingAdmissionState('idle');
     }
 }
 
@@ -147,33 +177,63 @@ function bindLoginControls() {
     }
 }
 
+async function submitLandingForm() {
+    if (landingAdmissionPending) return;
+
+    const nameElement = document.getElementById('char-name-input');
+    const roomElement = document.getElementById('room-id-input');
+    const nameInput = nameElement?.value.trim() || "";
+    const roomInput = roomElement?.value.trim().toUpperCase() || "";
+
+    if (!nameInput || !roomInput) {
+        alert("Please enter both a Character Name and a Room Name.");
+        if (!nameInput) nameElement?.focus();
+        else roomElement?.focus();
+        return;
+    }
+
+    setLandingAdmissionState('pending');
+    tableState.playerName = nameInput;
+    activeRoomName = roomInput;
+
+    localStorage.setItem('d85LastRoomName', roomInput);
+    localStorage.setItem('d85LastPlayerName', nameInput);
+    localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
+    if (tableState.isDM) localStorage.setItem('d85LastDmName', nameInput);
+
+    try {
+        await setupCameraAndVideo();
+        initHybridMediaVttStack(roomInput, nameInput);
+    } catch (e) {
+        setLandingAdmissionState('failed');
+        console.error("Failed to join: Initial table setup failed.", e);
+    }
+}
+
 function bindJoinButton() {
     const joinBtn = document.getElementById('join-btn');
-    if (!joinBtn) return;
+    const nameInput = document.getElementById('char-name-input');
+    const roomInput = document.getElementById('room-id-input');
+    if (!joinBtn || !nameInput || !roomInput) return;
 
-    joinBtn.addEventListener('click', async () => {
-        const nameInput = document.getElementById('char-name-input').value.trim();
-        const roomInput = document.getElementById('room-id-input').value.trim().toUpperCase();
+    joinBtn.addEventListener('click', submitLandingForm);
 
-        if (!nameInput || !roomInput) {
-            alert("Please enter both a Character Name and a Room Name.");
+    nameInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+
+        if (!tableState.isDM) {
+            roomInput.focus();
             return;
         }
 
-        tableState.playerName = nameInput;
-        activeRoomName = roomInput;
+        submitLandingForm();
+    });
 
-        localStorage.setItem('d85LastRoomName', roomInput);
-        localStorage.setItem('d85LastPlayerName', nameInput);
-        localStorage.setItem('d85LastWasDM', tableState.isDM ? 'true' : 'false');
-        if (tableState.isDM) localStorage.setItem('d85LastDmName', nameInput);
-
-        try {
-            await setupCameraAndVideo();
-            initHybridMediaVttStack(roomInput, nameInput);
-        } catch (e) {
-            console.error("Failed to join: Camera setup failed.", e);
-        }
+    roomInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        submitLandingForm();
     });
 }
 
@@ -217,6 +277,7 @@ function initializeClient() {
     });
 
     bindLoginControls();
+    setLandingAdmissionState('idle');
     bindJoinButton();
     refreshCommunityCounter();
     draw();

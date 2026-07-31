@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.5 — 04-table-sync.js
+// Dungeons '85 Public Beta 9.8.6 — 04-table-sync.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================

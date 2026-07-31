@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.5 — 03-network.js
+// Dungeons '85 Public Beta 9.8.6 — 03-network.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -781,25 +781,7 @@ function initHybridMediaVttStack(roomName, playerName) {
         };
 
         const setAdmissionUiState = (state, message = '') => {
-            const joinButton = document.getElementById('join-btn');
-            const roomNote = document.getElementById('gm-room-note');
-
-            if (joinButton) {
-                if (state === 'pending') {
-                    joinButton.disabled = true;
-                    joinButton.innerText = tableState.isDM ? 'CHECKING TABLE...' : 'JOINING TABLE...';
-                } else {
-                    joinButton.disabled = false;
-                    joinButton.innerText = 'CREATE/JOIN TABLE';
-                }
-            }
-
-            if (!tableState.isDM || !roomNote) return;
-
-            if (message) {
-                roomNote.innerText = message;
-                roomNote.classList.remove('hidden');
-            }
+            setLandingAdmissionState(state, message);
         };
 
         const updateConnectedInterfaceSafely = () => {
@@ -956,6 +938,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 }
 
                 socketSeatConfirmed = false;
+                setAdmissionUiState('failed', 'The table server did not confirm your seat. Please try again.');
                 debugError("DEBUG: Socket.IO table seat confirmation timed out; media recovery remains paused.");
             }, 6000);
         };
