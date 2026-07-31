@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.7.1 — 02-login.js
+// Dungeons '85 Public Beta 9.8.7.2 — 02-login.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -399,7 +399,7 @@ async function toggleLocalVideo() {
             }
 
             showLocalMediaStatus("cam", "CAMERA OFF");
-            setCameraOffSilhouetteVisibility(getLocalVideoContainer(), false);
+            setCameraOffTestPatternVisibility(getLocalVideoContainer(), false);
             publishLocalMediaState();
             return;
         }
@@ -423,7 +423,7 @@ async function toggleLocalVideo() {
             }
 
             clearLocalMediaStatus("cam");
-            setCameraOffSilhouetteVisibility(getLocalVideoContainer(), true);
+            setCameraOffTestPatternVisibility(getLocalVideoContainer(), true);
             publishLocalMediaState();
             establishMissingCallsForLocalMediaActivation('camera-permission');
             debugLog("DEBUG: Camera permission granted on demand without rebuilding healthy media calls.");

@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.7.1 — 08-media-video.js
+// Dungeons '85 Public Beta 9.8.7.2 — 08-media-video.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
@@ -7,10 +7,6 @@
 
 let pendingTableOrderRestore = null;
 let pendingTableOrderRestoreTimer = null;
-
-const CAMERA_OFF_ARCHETYPES = [
-    'WIZARD', 'FIGHTER', 'THIEF', 'RANGER', 'CLERIC', 'DWARF', 'ELF', 'BARBARIAN'
-];
 
 function isD85PlaceholderTrack(track, kind = null) {
     if (!track || track._d85Placeholder !== true) return false;
@@ -28,37 +24,22 @@ function getPlaceholderTrack(kind) {
     return kind === 'audio' ? placeholderAudioTrack : placeholderVideoTrack;
 }
 
-function hashSilhouetteSeed(value) {
-    const text = String(value || 'D85');
-    let hash = 0;
-    for (let index = 0; index < text.length; index += 1) {
-        hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
-    }
-    return Math.abs(hash);
-}
-
-function ensureCameraOffSilhouette(box, identity = '') {
+function ensureCameraOffTestPattern(box) {
     if (!box) return null;
-    let silhouette = box.querySelector('.camera-off-silhouette');
-    if (!silhouette) {
-        silhouette = document.createElement('div');
-        silhouette.className = 'camera-off-silhouette';
-        silhouette.setAttribute('aria-hidden', 'true');
-        silhouette.innerHTML = '<span class="camera-off-silhouette-head"></span><span class="camera-off-silhouette-body"></span><span class="camera-off-silhouette-role"></span>';
-        box.insertBefore(silhouette, box.firstChild);
+    let pattern = box.querySelector('.camera-off-test-pattern');
+    if (!pattern) {
+        pattern = document.createElement('div');
+        pattern.className = 'camera-off-test-pattern';
+        pattern.setAttribute('aria-hidden', 'true');
+        box.insertBefore(pattern, box.firstChild);
     }
-    const seed = hashSilhouetteSeed(identity || box.dataset.peerId || box.dataset.name || box.id);
-    const role = CAMERA_OFF_ARCHETYPES[seed % CAMERA_OFF_ARCHETYPES.length];
-    silhouette.dataset.archetype = role.toLowerCase();
-    const roleLabel = silhouette.querySelector('.camera-off-silhouette-role');
-    if (roleLabel) roleLabel.textContent = role;
-    return silhouette;
+    return pattern;
 }
 
-function setCameraOffSilhouetteVisibility(box, camEnabled) {
+function setCameraOffTestPatternVisibility(box, camEnabled) {
     if (!box) return;
-    const silhouette = ensureCameraOffSilhouette(box, box.dataset.peerId || box.dataset.name || box.id);
-    if (silhouette) silhouette.hidden = camEnabled === true;
+    const pattern = ensureCameraOffTestPattern(box);
+    if (pattern) pattern.hidden = camEnabled === true;
 }
 
 function createPlaceholderVideoTrack() {
@@ -260,8 +241,8 @@ async function setupCameraAndVideo() {
     const localBox = getLocalVideoContainer();
     if (localBox) {
         localBox.dataset.peerId = String(localPeerId || 'local');
-        ensureCameraOffSilhouette(localBox, localPeerId || tableState.playerName || 'local');
-        setCameraOffSilhouetteVisibility(localBox, false);
+        ensureCameraOffTestPattern(localBox);
+        setCameraOffTestPatternVisibility(localBox, false);
     }
 
     const micBtn = document.getElementById('toggle-mic-btn');
@@ -370,7 +351,7 @@ function resetLocalMediaAfterIdentityRecovery() {
 
     showLocalMediaStatus("mic", "MIC OFF");
     showLocalMediaStatus("cam", "CAMERA OFF");
-    setCameraOffSilhouetteVisibility(getLocalVideoContainer(), false);
+    setCameraOffTestPatternVisibility(getLocalVideoContainer(), false);
     publishLocalMediaState();
 
     debugWarn("DEBUG: Local microphone and camera reset OFF after PeerJS identity recovery.");
@@ -517,7 +498,7 @@ function applyPlayerMediaStateToVideoBox(box, player) {
     }
 
     box.dataset.tableMuted = player.tableMuted ? 'true' : 'false';
-    setCameraOffSilhouetteVisibility(box, player.camEnabled === true);
+    setCameraOffTestPatternVisibility(box, player.camEnabled === true);
     applyTableMuteToPeer(player.peerId, Boolean(player.tableMuted));
 }
 
@@ -956,7 +937,7 @@ function ensurePlayerVideoSeat(player) {
     box.dataset.name = characterName;
     box.dataset.isDm = isDM ? 'true' : 'false';
     applyPlayerMediaStateToVideoBox(box, player);
-    ensureCameraOffSilhouette(box, peerId);
+    ensureCameraOffTestPattern(box);
 
     const videoEl = document.createElement('video');
     videoEl.autoplay = true;

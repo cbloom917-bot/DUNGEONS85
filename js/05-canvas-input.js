@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.7.1 — 05-canvas-input.js
+// Dungeons '85 Public Beta 9.8.7.2 — 05-canvas-input.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================

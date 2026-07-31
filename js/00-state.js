@@ -1,4 +1,4 @@
-// Dungeons '85 Public Beta 9.8.7.1 — 00-state.js
+// Dungeons '85 Public Beta 9.8.7.2 — 00-state.js
 // Ordered client module. Preserve script load order in index.html.
 
 // ============================================================
