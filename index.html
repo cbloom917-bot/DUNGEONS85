@@ -32,24 +32,22 @@
             <img src="assets/dungeons85logo.svg" alt="Dungeons '85 Logo">
         </div>
         <div class="login-wrap">
-            <div class="login-title" id="version-display">VERSION 9.8.5 PUBLIC BETA</div>
+            <div class="login-title" id="version-display">VERSION 9.8.6 PUBLIC BETA</div>
             <div class="toggle-container">
     			<button type="button" id="role-player" class="toggle-btn active" onclick="setRoleSelection(false);">PLAYER (JOIN)</button>
     			<button type="button" id="role-dm" class="toggle-btn" onclick="setRoleSelection(true);">DM (HOST)</button>
 			</div>
 
 			<div id="gm-room-mode" class="toggle-container hidden">
-    			<button type="button" id="gm-create" class="toggle-btn active">CREATE NEW</button>
-    			<button type="button" id="gm-rejoin" class="toggle-btn">REJOIN LAST</button>
+    			<button type="button" id="gm-create" class="toggle-btn has-tooltip active" data-tooltip="Creates a new table and replaces your saved table.">CREATE NEW</button>
+    			<button type="button" id="gm-rejoin" class="toggle-btn has-tooltip" data-tooltip="Rejoins your last table name, or creates it again if the table is empty.">REJOIN LAST</button>
 			</div>
-			
-			<div id="gm-room-note" class="gm-room-note hidden">
-    		Creates a new table and replaces your saved table.
-			</div>
+
+            <div id="gm-room-note" class="gm-room-note hidden" aria-live="polite"></div>
 			
             <input type="text" id="char-name-input" placeholder="Character Name" class="bw-input" maxlength="20">
             <input type="text" id="room-id-input" placeholder="Table Name" class="bw-input" maxlength="20">
-            <button id="join-btn" class="bw-btn">CREATE/JOIN TABLE</button>
+            <button type="button" id="join-btn" class="bw-btn has-tooltip" data-tooltip="You'll enter muted with your camera off. Microphone required; camera optional.">JOIN</button>
             <div id="community-counter" class="community-counter" aria-live="polite"></div>
         </div>
     </div>
