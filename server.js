@@ -252,7 +252,27 @@ app.get(['/', '/index.html'], (req, res) => {
     });
 });
 
-app.use(express.static(__dirname));
+const PUBLIC_HTML_FILES = [
+    'assets.html',
+    'contact.html',
+    'faq.html',
+    'privacy.html',
+    'tos.html'
+];
+
+PUBLIC_HTML_FILES.forEach(fileName => {
+    app.get(`/${fileName}`, (req, res) => {
+        res.sendFile(path.join(__dirname, fileName));
+    });
+});
+
+app.get('/favicon.ico', (req, res) => {
+    res.sendFile(path.join(__dirname, 'favicon.ico'));
+});
+
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 const roomCampaignStates = {};
 
