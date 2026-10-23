@@ -104,6 +104,7 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
 
     .toolbar { position: absolute; background: #000; border: 2px solid #fff; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; z-index: 10; }
     #toolbar-left { top: 4rem; left: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 110px; }
+    #toolbar-left.dice-horizontal { width: 330px; }
     #toolbar-right { top: 4rem; right: 1rem; box-shadow: 4px 4px 0px 0px #fff; width: 170px; }
 
 
@@ -119,7 +120,8 @@ body { background-color: #000; color: #fff; margin: 0; padding: 0; overflow: hid
     .import-export-row { margin-bottom: 0.2rem; }
     #room-display { font-size: 10px; text-align: center; text-transform: uppercase; color: #fff; background: #222; padding: 4px; letter-spacing: 0.03em; }
     .tool-divider { border-top: 1px dashed #444; margin: 4px 0; }
-    .grid-dice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
+    .grid-dice { display: grid; grid-template-columns: 1fr; gap: 0.25rem; }
+    #toolbar-left.dice-horizontal .grid-dice { grid-template-columns: repeat(6, 1fr); }
 
 
     #ctx-menu { position: absolute; display: none; background: #000; border: 2px solid #fff; box-shadow: 4px 4px 0px 0px #fff; padding: 2px; z-index: 100; min-width: 150px; }
