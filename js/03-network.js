@@ -1265,6 +1265,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 return;
             }
 
+            const isSameMap = tableState.mapSrc === mapSrc;
             hasReceivedInitialMapSync = true;
             tableState.mapSrc = mapSrc;
 
@@ -1280,7 +1281,7 @@ function initHybridMediaVttStack(roomName, playerName) {
                 .then(() => {
                     if (tableState.mapSrc !== mapSrc) return;
                     if (belongsToRemoteDungeonLoad && !isCurrentRemoteDungeonLoad(remoteLoadId, remoteLoadGeneration)) return;
-                    centerMapInView();
+                    if (!isSameMap) centerMapInView();
                     draw();
                 })
                 .catch((err) => {
