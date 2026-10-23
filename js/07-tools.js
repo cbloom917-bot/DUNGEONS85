@@ -5,6 +5,35 @@
 // Dice, torch, and turn tracker
 // ============================================================
 
+function toggleDiceLayout() {
+        const diceToolbar = document.getElementById('toolbar-left');
+        if (diceToolbar) diceToolbar.classList.toggle('dice-horizontal');
+    }
+
+
+function enableDiceLayoutToggle() {
+        const diceToolbar = document.getElementById('toolbar-left');
+        const diceLabel = diceToolbar?.querySelector('.panel-label');
+        if (!diceLabel) return;
+
+        let pressStart = null;
+        diceLabel.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            pressStart = { x: e.clientX, y: e.clientY };
+        });
+
+        diceLabel.addEventListener('mouseup', (e) => {
+            if (!pressStart || e.button !== 0) return;
+            const moved = Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y);
+            pressStart = null;
+            if (moved <= 4) toggleDiceLayout();
+        });
+    }
+
+
+enableDiceLayoutToggle();
+
+
 function rollDice(sides) {
         const finalResult = Math.floor(Math.random() * sides) + 1;
         socket.emit('executeDiceRoll', {
